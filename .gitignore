@@ -10,6 +10,7 @@
 
 orchestrator-core/services.yaml
 orchestrator-core/.orchestrator/
+orchestrator-desktop/src-tauri/orchestrator-core-standalone.jar
 
 # Logs
 logs

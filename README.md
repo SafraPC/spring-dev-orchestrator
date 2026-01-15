@@ -116,3 +116,23 @@ Ele faz:
 - inicia `orchestrator-ui`
 - abre o desktop (`tauri dev`)
   Ao fechar o Desktop (ou pressionar Ctrl+C no terminal), o script faz cleanup e encerra core/UI/serviços.
+
+## Gerar Executável/Instalador
+
+Para gerar um executável standalone (sem precisar rodar o código ou start.sh):
+
+```bash
+./build.sh
+```
+
+Este script irá:
+1. Compilar o `orchestrator-core` (JAR standalone)
+2. Buildar a UI (Vite)
+3. Gerar o executável/instalador (Tauri)
+
+Os executáveis serão gerados em:
+- **macOS**: `.app` ou `.dmg` em `orchestrator-desktop/src-tauri/target/release/bundle/`
+- **Linux**: `.AppImage`, `.deb` ou `.rpm`
+- **Windows**: `.exe` ou `.msi`
+
+Para mais detalhes, consulte [BUILD.md](./BUILD.md).

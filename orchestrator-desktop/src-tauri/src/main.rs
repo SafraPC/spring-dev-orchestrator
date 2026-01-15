@@ -26,15 +26,31 @@ fn state_dir(app: &tauri::AppHandle) -> PathBuf {
   base.join("spring-dev-orchestrator")
 }
 
-fn core_jar_path() -> PathBuf {
-  PathBuf::from("../orchestrator-core/target/orchestrator-core-standalone.jar")
+fn core_jar_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+  if let Ok(env_jar) = std::env::var("SPRING_DEV_ORCHESTRATOR_CORE_JAR") {
+    return Ok(PathBuf::from(env_jar));
+  }
+
+  if cfg!(debug_assertions) {
+    Ok(PathBuf::from("../orchestrator-core/target/orchestrator-core-standalone.jar"))
+  } else {
+    let resource_dir = app
+      .path()
+      .resource_dir()
+      .map_err(|e| format!("Erro ao obter diretório de recursos: {e}"))?;
+    let jar = resource_dir.join("orchestrator-core-standalone.jar");
+    if !jar.exists() {
+      return Err(format!("JAR não encontrado em: {}", jar.display()));
+    }
+    Ok(jar)
+  }
 }
 
 fn spawn_core(app: &tauri::AppHandle) -> std::io::Result<(Child, ChildStdin, std::process::ChildStdout)> {
   let state = state_dir(app);
   fs::create_dir_all(&state)?;
 
-  let jar = std::env::var("SPRING_DEV_ORCHESTRATOR_CORE_JAR").ok().map(PathBuf::from).unwrap_or_else(core_jar_path);
+  let jar = core_jar_path(app).map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e))?;
   let log_dir = state.join("desktop-logs");
   let _ = fs::create_dir_all(&log_dir);
 
@@ -87,6 +103,10 @@ impl CoreBridge {
   fn ensure_started(&self, app: &tauri::AppHandle) -> Result<(), String> {
     if self.child.lock().unwrap().is_some() {
       return Ok(());
+    }
+    let jar_path = core_jar_path(app)?;
+    if !jar_path.exists() {
+      return Err(format!("JAR do core não encontrado em: {}. Certifique-se de que o build foi executado corretamente.", jar_path.display()));
     }
     let (child, stdin, stdout) = spawn_core(app).map_err(|e| format!("Falha ao iniciar core: {e}"))?;
     *self.child.lock().unwrap() = Some(child);

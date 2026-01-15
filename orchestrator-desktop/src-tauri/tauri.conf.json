@@ -28,6 +28,9 @@
     "icon": [
       "icons/icon.png"
     ],
+    "resources": [
+      "orchestrator-core-standalone.jar"
+    ],
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.13",
