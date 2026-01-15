@@ -398,6 +398,9 @@ export function ServiceTable(props: {
                     <div className="truncate font-medium text-sm">{s.name}</div>
                     <span className={statusBadge(s.status)}>{s.status}</span>
                     {s.pid ? <span className="text-xs text-slate-400 shrink-0">PID {s.pid}</span> : null}
+                    {s.env?.SERVER_PORT ? (
+                      <span className="text-xs text-slate-400 shrink-0">Porta {s.env.SERVER_PORT}</span>
+                    ) : null}
                   </div>
 
                   {s.containerIds && s.containerIds.length > 0 && (

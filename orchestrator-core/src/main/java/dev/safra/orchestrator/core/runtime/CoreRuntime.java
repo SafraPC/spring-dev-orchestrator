@@ -172,6 +172,44 @@ public class CoreRuntime {
       if (def.getName() == null || def.getName().isBlank()) {
         continue;
       }
+      
+      Path servicePath = Path.of(def.getPath());
+      if (Files.exists(servicePath)) {
+        Optional<Integer> configPort = extractPortFromConfig(servicePath);
+        if (configPort.isPresent()) {
+          int port = configPort.get();
+          if (def.getEnv() == null) {
+            def.setEnv(new HashMap<>());
+          }
+          def.getEnv().put("SERVER_PORT", String.valueOf(port));
+          
+          List<String> cmd = new ArrayList<>(def.getCommand());
+          boolean updated = false;
+          for (int i = 0; i < cmd.size(); i++) {
+            if (cmd.get(i).startsWith("-Dspring-boot.run.arguments=--server.port=")) {
+              cmd.set(i, "-Dspring-boot.run.arguments=--server.port=" + port);
+              updated = true;
+              break;
+            }
+          }
+          if (updated) {
+            def.setCommand(cmd);
+          } else {
+            Path mvnw = servicePath.resolve("mvnw");
+            boolean hasMvnw = Files.exists(mvnw);
+            if (hasMvnw) {
+              def.setCommand(List.of("./mvnw", "-q", "-DskipTests",
+                  "-Dspring-boot.run.arguments=--server.port=" + port,
+                  "spring-boot:run"));
+            } else {
+              def.setCommand(List.of("mvn", "-q", "-DskipTests",
+                  "-Dspring-boot.run.arguments=--server.port=" + port,
+                  "spring-boot:run"));
+            }
+          }
+        }
+      }
+      
       ServiceDescriptor sd = new ServiceDescriptor();
       sd.setDefinition(def);
 
@@ -333,7 +371,7 @@ public class CoreRuntime {
           def.setLogFile(logsDir.resolve(serviceName + ".log").toString());
           def.setContainerIds(new ArrayList<>());
 
-          int port = 18080 + (Math.abs(serviceName.hashCode()) % 120);
+          int port = extractPortFromConfig(dir).orElse(18080 + (Math.abs(serviceName.hashCode()) % 120));
 
           Map<String, String> env = new java.util.HashMap<>();
           env.put("SERVER_PORT", String.valueOf(port));
@@ -713,6 +751,100 @@ public class CoreRuntime {
     } catch (Exception e) {
       return null;
     }
+  }
+
+  private Optional<Integer> extractPortFromConfig(Path serviceDir) {
+    Path[] propsFiles = {
+      serviceDir.resolve("src/main/resources/application.properties"),
+      serviceDir.resolve("src/main/resources/application-local.properties"),
+      serviceDir.resolve("application.properties"),
+      serviceDir.resolve("application-local.properties")
+    };
+    
+    Path[] ymlFiles = {
+      serviceDir.resolve("src/main/resources/application.yml"),
+      serviceDir.resolve("src/main/resources/application.yaml"),
+      serviceDir.resolve("src/main/resources/application-local.yml"),
+      serviceDir.resolve("src/main/resources/application-local.yaml"),
+      serviceDir.resolve("application.yml"),
+      serviceDir.resolve("application.yaml")
+    };
+
+    for (Path propsFile : propsFiles) {
+      if (Files.exists(propsFile)) {
+        String content = readSmallText(propsFile, 8192);
+        if (content != null) {
+          for (String line : content.split("\n")) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            if (line.startsWith("server.port") || line.startsWith("SERVER_PORT")) {
+              String[] parts = line.split("=");
+              if (parts.length >= 2) {
+                try {
+                  String portStr = parts[1].trim().split("#")[0].trim();
+                  return Optional.of(Integer.parseInt(portStr));
+                } catch (NumberFormatException e) {
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    for (Path ymlFile : ymlFiles) {
+      if (Files.exists(ymlFile)) {
+        String content = readSmallText(ymlFile, 8192);
+        if (content != null) {
+          String[] lines = content.split("\n");
+          boolean inServerSection = false;
+          int serverIndent = -1;
+          for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
+            
+            if (trimmed.equals("---")) {
+              inServerSection = false;
+              serverIndent = -1;
+              continue;
+            }
+            
+            int indent = 0;
+            for (int i = 0; i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t'); i++) {
+              indent++;
+            }
+            
+            if (trimmed.startsWith("server:")) {
+              inServerSection = true;
+              serverIndent = indent;
+              continue;
+            }
+            
+            if (inServerSection) {
+              if (indent <= serverIndent && !trimmed.startsWith("-") && !line.trim().isEmpty()) {
+                inServerSection = false;
+                continue;
+              }
+              
+              if (trimmed.startsWith("port:") || trimmed.startsWith("port ")) {
+                String portStr = trimmed.replaceFirst("^port:?", "").trim().split("#")[0].trim();
+                if (portStr.startsWith("\"") && portStr.endsWith("\"")) {
+                  portStr = portStr.substring(1, portStr.length() - 1);
+                } else if (portStr.startsWith("'") && portStr.endsWith("'")) {
+                  portStr = portStr.substring(1, portStr.length() - 1);
+                }
+                try {
+                  return Optional.of(Integer.parseInt(portStr));
+                } catch (NumberFormatException e) {
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return Optional.empty();
   }
 
   private <T> Optional<T> readJson(Path file, Class<T> type) {
