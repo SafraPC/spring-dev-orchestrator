@@ -7,4 +7,3 @@ public class ServiceDescriptor {
   private ServiceDefinition definition;
   private ServiceRuntime runtime = new ServiceRuntime();
 }
-

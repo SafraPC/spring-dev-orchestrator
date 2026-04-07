@@ -1,0 +1,127 @@
+# Spring Dev Orchestrator — Cursor Rules
+
+## Overview
+Desktop app (Tauri) that orchestrates multiple Spring Boot microservices.
+Two modules: `orchestrator-core` (Java 17) and `orchestrator-desktop` (Tauri + React).
+The old `orchestrator-ui/` module is DEPRECATED — all frontend lives in `orchestrator-desktop/src/`.
+
+## Architecture
+
+```
+orchestrator-core/          Java 17, fat JAR, stdin/stdout JSON IPC
+orchestrator-desktop/       Tauri (Rust) + React/Vite/Tailwind
+  ├── src/                  React frontend (TSX)
+  ├── src-tauri/src/main.rs Rust bridge (CoreBridge)
+  └── src-tauri/tauri.conf  Tauri config
+```
+
+### IPC Flow
+UI (React) → invoke("core_request") → Rust (main.rs CoreBridge)
+→ stdin JSON → Java Core (CoreRuntime.handle) → stdout JSON → Rust → UI
+
+### IPC Protocol
+Request:  `{"id":"uuid","method":"methodName","params":{...}}`
+Response: `{"id":"uuid","ok":true,"result":{...},"error":null}`
+Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
+
+## Core Module (Java 17)
+
+### Key Classes
+| Class | Responsibility | Package |
+|-------|---------------|---------|
+| Main | Entry point, reads stdin, dispatches to CoreRuntime | core |
+| CoreRuntime | Method dispatch, lifecycle | core.runtime |
+| WorkspaceManager | Roots, scan, persistence | core.runtime |
+| ServiceManager | Start/stop/restart, status refresh | core.runtime |
+| ContainerManager | Container CRUD, service linking | core.runtime |
+| LogManager | Log subscriptions, emit lines | core.runtime |
+| ProjectScanner | Walk dirs, find pom.xml, detect Spring Boot | core.runtime |
+| PortExtractor | Read port from application.properties/yml | core.runtime |
+| ExternalToolLauncher | Open folder/terminal/editor | core.runtime |
+| StateStore | JSON read/write to files | core.runtime |
+| ProcessManager | Process start/stop/kill, alive check | process |
+
+### Models
+| Model | Type | Fields |
+|-------|------|--------|
+| ServiceDefinition | Lombok @Data | name, path, command, logFile, env, javaHome, containerIds |
+| ServiceDescriptor | Lombok @Data | definition, runtime |
+| ServiceRuntime | Lombok @Data | pid, status, lastStartAt, lastStopAt, lastError |
+| Container | Lombok @Data | id, name, description |
+| ServiceStatus | Enum | RUNNING, STOPPED, ERROR |
+| ServiceView | Record | Flattened DTO for IPC responses |
+| IpcRequest | Record | id, method, params |
+| IpcResponse | Record | id, ok, result, error |
+| IpcError | Record | code, message |
+| IpcEvent | Record | event, payload |
+
+### IPC Methods (CoreRuntime.handle)
+- ping, getWorkspace, setExcludeDirs
+- importRootAndScan, removeRoot, scanRoots
+- listServices, startService, stopService, restartService, startAll, stopAll
+- removeService
+- subscribeLogs, unsubscribeLogs
+- createContainer, updateContainer, deleteContainer, listContainers
+- addServiceToContainer, removeServiceFromContainer, getServicesByContainer
+- startContainer, stopContainer
+- openServiceFolder, openServiceTerminal, openServiceInEditor
+
+### Persistence
+- `workspace.json` — roots, services, containers
+- `runtime.json` — per-service runtime state (pid, status, timestamps)
+- Both in `--stateDir` directory
+
+### Critical Business Rules
+- Container deletion NEVER removes services — only clears containerIds
+- scanRoots() preserves existing containerIds by merging on service name
+- Stale containerIds (referencing deleted containers) are cleaned during scan
+- Ports auto-detected from application.properties/yml, fallback to hash-based
+
+## Desktop Module (Tauri + React)
+
+### Rust (src-tauri/src/main.rs)
+- CoreBridge: spawns Java JAR, manages stdin/stdout
+- core_request: Tauri command, sends IPC request, waits for response
+- select_folder: Tauri dialog for folder selection
+- Events emitted as "core_event" to UI
+
+### React Components
+| Component | Path | Responsibility |
+|-----------|------|---------------|
+| App | ui/App.tsx | Layout, state, keyboard shortcuts |
+| ServiceTable | ui/ServiceTable.tsx | Service list, actions, context menu |
+| ContainersPanel | ui/ContainersPanel.tsx | Container CRUD, start/stop container |
+| LogsPanel | ui/LogsPanel.tsx | Log stream, search, copy, level colors |
+| StatusBar | ui/StatusBar.tsx | Running/stopped/error counts |
+| Toast | ui/Toast.tsx | Toast notifications + useToast hook |
+| ImportSection | ui/ImportSection.tsx | Root path import form |
+
+### API Client (api/client.ts)
+- All methods go through `core<T>(method, params)` which calls `invoke("core_request")`
+- Types in `api/types.ts`: ServiceDto, ContainerDto, WorkspaceDto, StopResultDto
+
+### Keyboard Shortcuts
+- Ctrl+S: start selected service
+- Ctrl+X: stop selected service
+- Ctrl+R: restart selected service
+- Ctrl+F: search in logs
+
+## Build
+- `./build.sh` — full build: core JAR → copy to Tauri → frontend build → Tauri build
+- `./start.sh` — dev mode: core JAR → Vite dev → Tauri dev
+- Output: `.app`/`.dmg` in `orchestrator-desktop/src-tauri/target/release/bundle/`
+
+## Tech Stack
+- Java 17 (Maven, Jackson, Lombok for models)
+- Rust (Tauri 2.x)
+- React 18, TypeScript, Vite, Tailwind CSS
+- No Spring Boot in core (plain Java + Jackson)
+
+## Conventions
+- Container = logical group of services (NOT Docker)
+- Service = Spring Boot project discovered via pom.xml scan
+- All IPC is synchronous request/response except log events (async stream)
+- State persisted as JSON files, no database
+- Max 300 lines per file
+- No comments in code
+- Portuguese for UI text, English for code identifiers

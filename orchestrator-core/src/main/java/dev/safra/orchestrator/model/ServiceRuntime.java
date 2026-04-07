@@ -1,6 +1,7 @@
 package dev.safra.orchestrator.model;
 
 import java.time.Instant;
+
 import lombok.Data;
 
 @Data
@@ -11,4 +12,3 @@ public class ServiceRuntime {
   private Instant lastStopAt;
   private String lastError;
 }
-

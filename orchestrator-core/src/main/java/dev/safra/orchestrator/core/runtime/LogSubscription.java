@@ -91,12 +91,8 @@ public class LogSubscription {
 
         List<String> lastLines = readLastLines(file, tailLines);
         for (String l : lastLines) {
-          if (l != null) {
-            String trimmed = l.trim();
-            if (!trimmed.isEmpty()) {
-            }
+          if (l != null)
             onLine.accept(l);
-          }
         }
         if (lastLines.isEmpty()) {
           onLine.accept("[logTail] Arquivo de log existe mas está vazio. Aguardando logs do processo...");
@@ -115,12 +111,8 @@ public class LogSubscription {
           List<String> lines = readNewLines(file, pos, carry);
           if (!lines.isEmpty()) {
             for (String l : lines) {
-              if (l != null) {
-                String trimmed = l.trim();
-                if (!trimmed.isEmpty()) {
-                }
+              if (l != null)
                 onLine.accept(l);
-              }
             }
           } else {
             long currentSize = Files.size(file);
@@ -147,14 +139,6 @@ public class LogSubscription {
       } catch (InterruptedException ignored) {
         break;
       }
-    }
-  }
-
-  private long getFileSize(Path file) {
-    try {
-      return Files.exists(file) ? Files.size(file) : 0;
-    } catch (Exception e) {
-      return 0;
     }
   }
 

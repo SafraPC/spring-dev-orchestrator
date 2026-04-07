@@ -4,14 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 CORE_DIR="$ROOT_DIR/orchestrator-core"
-UI_DIR="$ROOT_DIR/orchestrator-ui"
 DESKTOP_DIR="$ROOT_DIR/orchestrator-desktop"
 
 ORCH_DIR="$ROOT_DIR/.orchestrator"
 PID_DIR="$ORCH_DIR/pids"
 mkdir -p "$PID_DIR"
 
-CORE_PID_FILE="$PID_DIR/core.pid"
 UI_PID_FILE="$PID_DIR/ui.pid"
 
 log() { printf "\n[orchestrator] %s\n" "$*"; }
@@ -31,7 +29,6 @@ ensure_rust_with_brew() {
 
   if ! command -v brew >/dev/null 2>&1; then
     log "ERRO: Rust (cargo) não encontrado e Homebrew (brew) não está instalado."
-    log "Instale o Homebrew e re-execute o script (ou instale Rust manualmente)."
     exit 1
   fi
 
@@ -43,11 +40,11 @@ ensure_rust_with_brew() {
     fi
   fi
 
-  log "Rust toolchain não encontrado (cargo). Instalando via Homebrew (brew install rust)..."
+  log "Instalando Rust via Homebrew..."
   brew install rust || true
 
   if ! command -v cargo >/dev/null 2>&1; then
-    log "ERRO: não consegui instalar/ativar cargo via brew. Verifique seu Homebrew e tente novamente."
+    log "ERRO: não consegui instalar cargo via brew."
     exit 1
   fi
 }
@@ -55,34 +52,6 @@ ensure_rust_with_brew() {
 is_pid_alive() {
   local pid="$1"
   [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null
-}
-
-wait_for_http() {
-  local url="$1"
-  local timeout_s="${2:-30}"
-  local start
-  start="$(date +%s)"
-  while true; do
-    if command -v curl >/dev/null 2>&1; then
-      if curl -fsS "$url" >/dev/null 2>&1; then
-        return 0
-      fi
-    else
-      local host port
-      host="$(echo "$url" | sed -E 's#https?://([^:/]+).*#\1#')"
-      port="$(echo "$url" | sed -E 's#https?://[^:/]+:([0-9]+).*#\1#')"
-      port="${port:-80}"
-      if (echo >/dev/tcp/"$host"/"$port") >/dev/null 2>&1; then
-        return 0
-      fi
-    fi
-    local now
-    now="$(date +%s)"
-    if (( now - start >= timeout_s )); then
-      return 1
-    fi
-    sleep 0.5
-  done
 }
 
 build_core() {
@@ -104,20 +73,14 @@ start_ui() {
     fi
   fi
 
-  log "Iniciando orchestrator-ui (Vite)..."
+  log "Iniciando frontend (Vite)..."
   (
-    cd "$UI_DIR"
-    # Garante deps atualizadas (ex: @tauri-apps/api) mesmo se node_modules já existir
+    cd "$DESKTOP_DIR"
     if [[ ! -d node_modules ]]; then
-      log "Instalando dependências da UI (npm install)..."
+      log "Instalando dependências (npm install)..."
       npm install
-    else
-      if ! node -e "require('@tauri-apps/api/package.json'); require('@tauri-apps/plugin-dialog/package.json')" >/dev/null 2>&1; then
-        log "Dependências Tauri da UI ausentes. Rodando npm install..."
-        npm install
-      fi
     fi
-    mkdir -p "$UI_DIR/dist"
+    mkdir -p "$DESKTOP_DIR/dist"
     nohup npm run dev -- --host localhost --port 5173 > "$ORCH_DIR/ui.console.log" 2>&1 &
     echo $! > "$UI_PID_FILE"
   )
@@ -125,22 +88,13 @@ start_ui() {
 }
 
 cleanup() {
-  log "Encerrando processos iniciados pelo start.sh..."
+  log "Encerrando processos..."
 
   if [[ -f "$UI_PID_FILE" ]]; then
     local pid
     pid="$(cat "$UI_PID_FILE" 2>/dev/null || true)"
     if is_pid_alive "$pid"; then
       log "Parando UI (PID $pid)..."
-      kill "$pid" 2>/dev/null || true
-    fi
-  fi
-
-  if [[ -f "$CORE_PID_FILE" ]]; then
-    local pid
-    pid="$(cat "$CORE_PID_FILE" 2>/dev/null || true)"
-    if is_pid_alive "$pid"; then
-      log "Parando core (PID $pid)..."
       kill "$pid" 2>/dev/null || true
     fi
   fi

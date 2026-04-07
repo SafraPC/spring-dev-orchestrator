@@ -1,138 +1,52 @@
-# spring-dev-orchestrator
+# Spring Dev Orchestrator
 
-Aplicação **desktop** para desenvolvimento local que orquestra múltiplos microsserviços Spring Boot: iniciar/parar/reiniciar, acompanhar logs em tempo real e gerenciar configurações de execução a partir de uma única UI.
+Aplicação **desktop nativa** para orquestrar múltiplos microsserviços Spring Boot: iniciar/parar/reiniciar, acompanhar logs em tempo real, organizar em containers e gerenciar configurações — tudo numa única UI.
 
-## Estrutura (monorepo)
+## Arquitetura (2 módulos)
 
 ```
 spring-dev-orchestrator/
-├── orchestrator-core/        (Java 21 + Spring Boot WebFlux)
-├── orchestrator-ui/          (React + Vite + Tailwind)
-└── orchestrator-desktop/     (Tauri)
+├── orchestrator-core/      Java 17 — lógica de negócio, fat JAR standalone
+└── orchestrator-desktop/   Tauri (Rust) + React/Vite/Tailwind — frontend e desktop
 ```
 
-## Status do repositório
+- **Core**: processo Java que recebe comandos via stdin/stdout (JSON IPC). Escaneia projetos, gerencia processos, persiste estado.
+- **Desktop**: app Tauri que embarca o frontend React e spawna o core como processo filho.
 
-- `orchestrator-core`: base funcional (API + WebSocket + start/stop/restart + logs em arquivo).
-- `orchestrator-ui`: scaffolding (dashboard + logs) — sem lógica de processos no frontend.
-- `orchestrator-desktop`: scaffolding (Tauri) — inicia o core automaticamente.
+## Pré-requisitos
 
-## Rodando apenas o core (sem UI / sem Tauri)
+- Java 17+ (JDK)
+- Maven 3.6+
+- Node.js 18+ e npm
+- Rust (via `rustup` ou Homebrew)
 
-Pré-requisitos:
-
-- Java **21**
-- Maven (`mvn`)
-
-Suba o servidor:
+## Dev (modo desenvolvimento)
 
 ```bash
-cd orchestrator-core
-mvn spring-boot:run
-```
-
-O core sobe por padrão em `http://localhost:5174`.
-
-## Configuração de serviços (`services.yaml`)
-
-O core lê e persiste o arquivo `orchestrator-core/services.yaml`. Se não existir, ele cria um exemplo com um serviço “dummy” que gera logs para demonstrar start/stop/logs.
-
-Campos mínimos por serviço:
-
-- `name`
-- `path`
-- `command` (lista de strings)
-- `logFile`
-
-## API (resumo)
-
-Base: `http://localhost:5174/api`
-
-- `GET /services`: lista serviços
-- `POST /services/{name}/start`: inicia
-- `POST /services/{name}/stop`: para (SIGTERM -> SIGKILL)
-- `POST /services/{name}/restart`: reinicia
-- `POST /services/start-all`: inicia todos
-- `POST /services/stop-all`: para todos
-
-Logs via WebSocket (stream):
-
-- `ws://localhost:5174/ws/logs?service={name}`
-
-## Rodando a UI (opcional)
-
-Pré-requisitos:
-
-- Node.js 18+ (recomendado 20+)
-
-```bash
-cd orchestrator-ui
-npm install
-npm run dev
-```
-
-A UI roda em `http://localhost:5173` e chama o core em `http://localhost:5174`.
-
-Se o core estiver em outra porta/host, configure a UI via variável:
-
-- `VITE_CORE_URL` (ex: `http://localhost:5174`) — veja `orchestrator-ui/env.example`
-
-## Rodando o app Desktop (Tauri)
-
-Pré-requisitos:
-
-- Toolchain Rust (para Tauri)
-- Node.js
-
-Em modo dev:
-
-- Suba o core (ou deixe o desktop subir automaticamente)
-- Suba a UI com `npm run dev` em `orchestrator-ui`
-- Rode o Tauri:
-
-```bash
-cd orchestrator-desktop
-npm install
-npm run tauri:dev
-```
-
-O desktop tenta iniciar o core via Maven (default). Para customizar o comando do core:
-
-- `SPRING_DEV_ORCHESTRATOR_CORE_EXEC`: executável a ser chamado no startup do desktop.
-
-## Start rápido (script)
-
-Existe um script na raiz para subir tudo de uma vez:
-
-```bash
-chmod +x start.sh
 ./start.sh
 ```
 
-Ele faz:
+Compila o core, inicia o Vite dev server e abre o Tauri em modo dev.
 
-- inicia `orchestrator-core`
-- chama `POST /api/services/start-all`
-- inicia `orchestrator-ui`
-- abre o desktop (`tauri dev`)
-  Ao fechar o Desktop (ou pressionar Ctrl+C no terminal), o script faz cleanup e encerra core/UI/serviços.
-
-## Gerar Executável/Instalador
-
-Para gerar um executável standalone (sem precisar rodar o código ou start.sh):
+## Build (executável nativo)
 
 ```bash
 ./build.sh
 ```
 
-Este script irá:
-1. Compilar o `orchestrator-core` (JAR standalone)
-2. Buildar a UI (Vite)
-3. Gerar o executável/instalador (Tauri)
+Gera:
+- **macOS**: `.app` / `.dmg` em `orchestrator-desktop/src-tauri/target/release/bundle/`
+- **Linux**: `.AppImage` / `.deb` / `.rpm`
+- **Windows**: `.exe` / `.msi`
 
-Os executáveis serão gerados em:
-- **macOS**: `.app` ou `.dmg` em `orchestrator-desktop/src-tauri/target/release/bundle/`
-- **Linux**: `.AppImage`, `.deb` ou `.rpm`
-- **Windows**: `.exe` ou `.msi`
+## Funcionalidades
 
-Para mais detalhes, consulte [BUILD.md](./BUILD.md).
+- Scan automático de projetos Spring Boot (busca `pom.xml`)
+- Start/stop/restart individual ou em lote
+- Containers (agrupamento lógico de serviços)
+- Logs em tempo real com busca, cópia e highlight por nível
+- Detecção automática de porta (properties/yml)
+- Atalhos de teclado: Ctrl+S (start), Ctrl+X (stop), Ctrl+R (restart), Ctrl+F (buscar logs)
+- Status bar com contagem de serviços
+- Toast notifications
+- Uptime e port links clicáveis

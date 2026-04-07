@@ -5,7 +5,8 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 public final class Json {
-  private Json() {}
+  private Json() {
+  }
 
   public static ObjectMapper mapper() {
     ObjectMapper om = new ObjectMapper();
@@ -14,4 +15,3 @@ public final class Json {
     return om;
   }
 }
-

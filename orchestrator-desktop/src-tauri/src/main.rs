@@ -100,18 +100,48 @@ fn start_reader_thread(app: tauri::AppHandle, stdout: std::process::ChildStdout,
 }
 
 impl CoreBridge {
+  fn is_alive(&self) -> bool {
+    if let Ok(mut guard) = self.child.lock() {
+      if let Some(ref mut child) = *guard {
+        return child.try_wait().ok().flatten().is_none();
+      }
+    }
+    false
+  }
+
+  fn cleanup(&self) {
+    if let Ok(mut guard) = self.stdin.lock() {
+      drop(guard.take());
+    }
+    if let Ok(mut guard) = self.child.lock() {
+      if let Some(ref mut child) = *guard {
+        let _ = child.kill();
+        let _ = child.wait();
+      }
+      *guard = None;
+    }
+  }
+
   fn ensure_started(&self, app: &tauri::AppHandle) -> Result<(), String> {
-    if self.child.lock().unwrap().is_some() {
+    if self.is_alive() {
       return Ok(());
     }
+    self.cleanup();
+
     let jar_path = core_jar_path(app)?;
     if !jar_path.exists() {
-      return Err(format!("JAR do core não encontrado em: {}. Certifique-se de que o build foi executado corretamente.", jar_path.display()));
+      return Err(format!("JAR não encontrado em: {}", jar_path.display()));
     }
     let (child, stdin, stdout) = spawn_core(app).map_err(|e| format!("Falha ao iniciar core: {e}"))?;
     *self.child.lock().unwrap() = Some(child);
     *self.stdin.lock().unwrap() = Some(stdin);
     start_reader_thread(app.clone(), stdout, self.pending.clone());
+
+    thread::sleep(Duration::from_millis(300));
+    if !self.is_alive() {
+      self.cleanup();
+      return Err("Core encerrou imediatamente. Verifique a versão do Java.".to_string());
+    }
     Ok(())
   }
 
@@ -126,18 +156,25 @@ impl CoreBridge {
     });
 
     let (tx, rx) = std::sync::mpsc::channel::<Value>();
-    self.pending.lock().unwrap().insert(req["id"].as_str().unwrap().to_string(), tx);
+    self.pending.lock().unwrap().insert(id.clone(), tx);
 
-    let mut guard = self.stdin.lock().unwrap();
-    let stdin = guard.as_mut().ok_or_else(|| "stdin do core indisponível".to_string())?;
-    stdin
-      .write_all(format!("{}\n", req.to_string()).as_bytes())
-      .map_err(|e| format!("Falha ao escrever no core: {e}"))?;
-    stdin.flush().ok();
+    {
+      let mut guard = self.stdin.lock().unwrap();
+      let stdin = guard.as_mut().ok_or_else(|| "stdin do core indisponível".to_string())?;
+      if let Err(e) = stdin.write_all(format!("{}\n", req).as_bytes()) {
+        drop(guard);
+        self.cleanup();
+        return Err(format!("Core desconectado: {e}"));
+      }
+      stdin.flush().ok();
+    }
 
     match rx.recv_timeout(Duration::from_secs(30)) {
       Ok(resp) => Ok(resp),
-      Err(_) => Err("Timeout aguardando resposta do core".to_string()),
+      Err(_) => {
+        self.pending.lock().ok().map(|mut m| m.remove(&id));
+        Err("Timeout aguardando resposta do core".to_string())
+      }
     }
   }
 }
@@ -184,22 +221,36 @@ async fn select_folder(app: tauri::AppHandle) -> Result<Option<String>, String> 
   }
 }
 
+impl CoreBridge {
+  fn shutdown(&self) {
+    self.cleanup();
+  }
+}
+
 fn main() {
+  let bridge = CoreBridge {
+    child: Mutex::new(None),
+    stdin: Mutex::new(None),
+    pending: Arc::new(Mutex::new(HashMap::new())),
+  };
+
   tauri::Builder::default()
-    .manage(CoreBridge {
-      child: Mutex::new(None),
-      stdin: Mutex::new(None),
-      pending: Arc::new(Mutex::new(HashMap::new())),
-    })
+    .manage(bridge)
     .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![core_request, select_folder])
     .setup(|app| {
       let app_handle = app.handle().clone();
-      let bridge = app.state::<CoreBridge>();
-      let _ = bridge.ensure_started(&app_handle);
+      let b = app.state::<CoreBridge>();
+      let _ = b.ensure_started(&app_handle);
       Ok(())
     })
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application")
+    .run(|app, event| {
+      if let tauri::RunEvent::Exit = event {
+        let b = app.state::<CoreBridge>();
+        b.shutdown();
+      }
+    });
 }
 

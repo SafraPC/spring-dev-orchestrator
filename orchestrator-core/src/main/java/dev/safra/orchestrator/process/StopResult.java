@@ -28,4 +28,3 @@ public class StopResult {
     return new StopResult(false, reason, pid);
   }
 }
-

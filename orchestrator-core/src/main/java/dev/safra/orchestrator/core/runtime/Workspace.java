@@ -4,8 +4,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.Data;
+
 import dev.safra.orchestrator.model.Container;
+import lombok.Data;
 
 @Data
 public class Workspace {
@@ -14,4 +15,3 @@ public class Workspace {
   private List<dev.safra.orchestrator.model.ServiceDefinition> services = new ArrayList<>();
   private Map<String, Container> containers = new HashMap<>();
 }
-

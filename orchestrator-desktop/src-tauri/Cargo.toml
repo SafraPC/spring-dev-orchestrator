@@ -6,16 +6,15 @@ authors = ["Leandro Safra"]
 edition = "2021"
 
 [build-dependencies]
-tauri-build = { version = "2.0.0", features = [] }
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2.0.0", features = [] }
+tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
-tauri-plugin-dialog = "2.0.0"
+tauri-plugin-dialog = "2"
 
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
-

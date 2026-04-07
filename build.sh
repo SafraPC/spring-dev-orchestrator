@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 CORE_DIR="$ROOT_DIR/orchestrator-core"
-UI_DIR="$ROOT_DIR/orchestrator-ui"
 DESKTOP_DIR="$ROOT_DIR/orchestrator-desktop"
 
 JAR_PATH="$CORE_DIR/target/orchestrator-core-standalone.jar"
@@ -41,28 +40,14 @@ log "2. Copiando JAR para o bundle do Tauri..."
 cp "$JAR_PATH" "$JAR_DEST"
 log "✓ JAR copiado para: $JAR_DEST"
 
-log "3. Buildando orchestrator-ui..."
-(
-  cd "$UI_DIR"
-  if [[ ! -d node_modules ]]; then
-    log "  Instalando dependências da UI..."
-    npm install
-  fi
-  npm run build
-)
-if [[ ! -d "$UI_DIR/dist" ]]; then
-  log "ERRO: Build da UI falhou (dist não encontrado)"
-  exit 1
-fi
-log "✓ UI buildada: $UI_DIR/dist"
-
-log "4. Buildando aplicativo desktop (Tauri)..."
+log "3. Buildando frontend + desktop (Tauri)..."
 (
   cd "$DESKTOP_DIR"
   if [[ ! -d node_modules ]]; then
-    log "  Instalando dependências do Desktop..."
+    log "  Instalando dependências..."
     npm install
   fi
+  npm run build
   npm run tauri:build
 )
 log "✓ Build completo!"

@@ -5,13 +5,15 @@ import java.util.HashMap;
 import java.util.Map;
 
 public final class Args {
-  private Args() {}
+  private Args() {
+  }
 
   public static Map<String, String> parse(String[] args) {
     Map<String, String> m = new HashMap<>();
     for (int i = 0; i < args.length; i++) {
       String a = args[i];
-      if (!a.startsWith("--")) continue;
+      if (!a.startsWith("--"))
+        continue;
       String key = a.substring(2);
       String val = "true";
       if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
@@ -28,4 +30,3 @@ public final class Args {
     return Path.of(v).toAbsolutePath().normalize();
   }
 }
-

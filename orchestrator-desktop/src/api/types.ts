@@ -7,6 +7,7 @@ export type ServiceDto = {
   logFile: string;
   env?: Record<string, string>;
   javaHome?: string;
+  javaVersion?: string;
   containerIds?: string[];
   pid?: number | null;
   status: ServiceStatus;
@@ -31,4 +32,11 @@ export type ContainerDto = {
   id: string;
   name: string;
   description?: string;
+};
+
+export type JdkInfo = {
+  majorVersion: string;
+  fullVersion: string;
+  path: string;
+  vendor: string;
 };

@@ -1,6 +1,5 @@
 package dev.safra.orchestrator.process;
 
-import dev.safra.orchestrator.model.ServiceDefinition;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,13 +10,20 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+import dev.safra.orchestrator.model.ServiceDefinition;
+
 public class ProcessManager {
   private final Duration gracefulTimeout;
   private final Duration killTimeout;
+  private final JavaVersionDetector javaDetector = new JavaVersionDetector();
 
   public ProcessManager(Duration gracefulTimeout, Duration killTimeout) {
     this.gracefulTimeout = gracefulTimeout;
     this.killTimeout = killTimeout;
+  }
+
+  public JavaVersionDetector getJavaDetector() {
+    return javaDetector;
   }
 
   public long start(ServiceDefinition def) {
@@ -37,7 +43,8 @@ public class ProcessManager {
           if (mvnw.exists()) {
             mvnw.setExecutable(true);
           }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
       }
       ProcessBuilder pb = new ProcessBuilder(cmd);
       pb.directory(workDir.toFile());
@@ -48,32 +55,33 @@ public class ProcessManager {
       if (def.getEnv() != null) {
         env.putAll(def.getEnv());
       }
-      
+
       String javaHome = def.getJavaHome();
       if (javaHome == null || javaHome.isBlank()) {
-        javaHome = detectJavaHome();
+        javaHome = detectJavaHome(def.getJavaVersion());
       }
-      
+
       if (javaHome != null && !javaHome.isBlank()) {
         env.put("JAVA_HOME", javaHome);
         String path = env.getOrDefault("PATH", "");
         String javaBin = Path.of(javaHome, "bin").toString();
         env.put("PATH", javaBin + ":" + path);
       }
-      
+
       try {
         if (!Files.exists(logPath)) {
           Files.createFile(logPath);
-          Files.writeString(logPath, "[orchestrator] Processo iniciando...\n", java.nio.charset.StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
+          Files.writeString(logPath, "[orchestrator] Processo iniciando...\n", java.nio.charset.StandardCharsets.UTF_8,
+              java.nio.file.StandardOpenOption.APPEND);
         }
       } catch (Exception e) {
       }
 
       Process p = pb.start();
       long pid = p.pid();
-      
+
       monitorProcess(pid, def.getName());
-      
+
       return pid;
     } catch (IOException e) {
       throw new IllegalStateException("Falha ao iniciar processo para serviço: " + def.getName(), e);
@@ -131,71 +139,22 @@ public class ProcessManager {
     }
   }
 
-  private String detectJavaHome() {
-    String existing = System.getenv("JAVA_HOME");
-    if (existing != null && !existing.isBlank()) {
-      if (isJava21(existing)) {
-        return existing;
-      }
-    }
-
-    if (System.getProperty("os.name").toLowerCase().contains("mac")) {
-      try {
-        Process proc = new ProcessBuilder("/usr/libexec/java_home", "-v", "21").start();
-        String output = new String(proc.getInputStream().readAllBytes()).trim();
-        if (proc.waitFor() == 0 && !output.isBlank()) {
-          return output;
-        }
-      } catch (Exception ignored) {}
-    }
-
-    try {
-      Process proc = new ProcessBuilder("java", "-XshowSettings:properties", "-version").start();
-      String output = new String(proc.getErrorStream().readAllBytes());
-      for (String line : output.split("\n")) {
-        if (line.contains("java.home")) {
-          String[] parts = line.split("=");
-          if (parts.length > 1) {
-            String home = parts[1].trim();
-            if (isJava21(home)) {
-              return home;
-            }
-          }
-        }
-      }
-    } catch (Exception ignored) {}
-
-    return null;
-  }
-
-  private boolean isJava21(String javaHome) {
-    try {
-      Path javaExe = Path.of(javaHome, "bin", "java");
-      if (!Files.exists(javaExe)) {
-        return false;
-      }
-      Process proc = new ProcessBuilder(javaExe.toString(), "-version").start();
-      String output = new String(proc.getErrorStream().readAllBytes());
-      return output.contains("\"21");
-    } catch (Exception e) {
-      return false;
-    }
+  private String detectJavaHome(String requiredVersion) {
+    return javaDetector.resolveJavaHome(requiredVersion);
   }
 
   private void monitorProcess(long pid, String serviceName) {
-    Thread.ofVirtual().start(() -> {
+    Thread t = new Thread(() -> {
       try {
         Optional<ProcessHandle> opt = ProcessHandle.of(pid);
-        if (opt.isEmpty()) {
+        if (opt.isEmpty())
           return;
-        }
-        
-        ProcessHandle handle = opt.get();
-        handle.onExit().thenRun(() -> {
+        opt.get().onExit().thenRun(() -> {
         });
-      } catch (Exception e) {
+      } catch (Exception ignored) {
       }
-    });
+    }, "monitor-" + serviceName);
+    t.setDaemon(true);
+    t.start();
   }
 }
-

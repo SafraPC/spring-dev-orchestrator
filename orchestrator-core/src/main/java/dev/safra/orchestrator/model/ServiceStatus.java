@@ -5,4 +5,3 @@ public enum ServiceStatus {
   STOPPED,
   ERROR
 }
-
