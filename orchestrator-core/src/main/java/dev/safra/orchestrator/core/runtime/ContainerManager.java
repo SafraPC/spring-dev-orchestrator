@@ -2,6 +2,7 @@ package dev.safra.orchestrator.core.runtime;
 
 import java.util.ArrayList;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,13 +12,17 @@ import dev.safra.orchestrator.model.ServiceDefinition;
 
 public class ContainerManager {
   private final ObjectMapper om;
-  private final Workspace workspace;
+  private final Supplier<Workspace> workspaceSupplier;
   private final Runnable persistWorkspace;
 
-  public ContainerManager(ObjectMapper om, Workspace workspace, Runnable persistWorkspace) {
+  public ContainerManager(ObjectMapper om, Supplier<Workspace> workspaceSupplier, Runnable persistWorkspace) {
     this.om = om;
-    this.workspace = workspace;
+    this.workspaceSupplier = workspaceSupplier;
     this.persistWorkspace = persistWorkspace;
+  }
+
+  private Workspace ws() {
+    return workspaceSupplier.get();
   }
 
   public JsonNode create(String name, String description) {
@@ -26,7 +31,7 @@ public class ContainerManager {
 
     String id = UUID.randomUUID().toString();
     Container container = new Container(id, name, description != null ? description : "");
-    workspace.getContainers().put(id, container);
+    ws().getContainers().put(id, container);
     persistWorkspace.run();
     return om.valueToTree(container);
   }
@@ -35,7 +40,7 @@ public class ContainerManager {
     if (id == null || id.isBlank())
       throw new IllegalArgumentException("params.id é obrigatório");
 
-    Container container = workspace.getContainers().get(id);
+    Container container = ws().getContainers().get(id);
     if (container == null)
       throw new IllegalArgumentException("Container não encontrado: " + id);
 
@@ -52,11 +57,12 @@ public class ContainerManager {
     if (id == null || id.isBlank())
       throw new IllegalArgumentException("params.id é obrigatório");
 
-    Container removed = workspace.getContainers().remove(id);
+    Workspace w = ws();
+    Container removed = w.getContainers().remove(id);
     if (removed == null)
       throw new IllegalArgumentException("Container não encontrado: " + id);
 
-    for (ServiceDefinition def : workspace.getServices()) {
+    for (ServiceDefinition def : w.getServices()) {
       if (def.getContainerIds() != null) {
         def.getContainerIds().remove(id);
       }
@@ -67,17 +73,18 @@ public class ContainerManager {
   }
 
   public JsonNode list() {
-    return om.valueToTree(workspace.getContainers().values());
+    return om.valueToTree(ws().getContainers().values());
   }
 
   public void addService(String serviceName, String containerId) {
     if (containerId == null || containerId.isBlank())
       throw new IllegalArgumentException("params.containerId é obrigatório");
 
-    if (!workspace.getContainers().containsKey(containerId))
+    Workspace w = ws();
+    if (!w.getContainers().containsKey(containerId))
       throw new IllegalArgumentException("Container não encontrado: " + containerId);
 
-    ServiceDefinition def = workspace.getServices().stream()
+    ServiceDefinition def = w.getServices().stream()
         .filter(s -> s.getName().equals(serviceName))
         .findFirst()
         .orElseThrow(() -> new IllegalArgumentException("Serviço não encontrado: " + serviceName));
@@ -95,7 +102,7 @@ public class ContainerManager {
     if (containerId == null || containerId.isBlank())
       throw new IllegalArgumentException("params.containerId é obrigatório");
 
-    ServiceDefinition def = workspace.getServices().stream()
+    ServiceDefinition def = ws().getServices().stream()
         .filter(s -> s.getName().equals(serviceName))
         .findFirst()
         .orElseThrow(() -> new IllegalArgumentException("Serviço não encontrado: " + serviceName));

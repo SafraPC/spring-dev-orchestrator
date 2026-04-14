@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,11 +28,11 @@ public class ServiceManager {
   private final Map<String, ServiceDescriptor> services;
   private final Runnable persistRuntime;
   private final Runnable persistWorkspace;
-  private final Workspace workspace;
+  private final Supplier<Workspace> workspaceSupplier;
 
   public ServiceManager(ObjectMapper om, ProcessManager processManager, LogManager logManager,
       BiConsumer<String, JsonNode> emitEvent, Map<String, ServiceDescriptor> services,
-      Runnable persistRuntime, Runnable persistWorkspace, Workspace workspace) {
+      Runnable persistRuntime, Runnable persistWorkspace, Supplier<Workspace> workspaceSupplier) {
     this.om = om;
     this.processManager = processManager;
     this.logManager = logManager;
@@ -39,7 +40,7 @@ public class ServiceManager {
     this.services = services;
     this.persistRuntime = persistRuntime;
     this.persistWorkspace = persistWorkspace;
-    this.workspace = workspace;
+    this.workspaceSupplier = workspaceSupplier;
   }
 
   public JsonNode list() {
@@ -155,8 +156,9 @@ public class ServiceManager {
         sd.getDefinition().getContainerIds().clear();
       logManager.removeSubscriptionsFor(name);
     }
-    workspace.getServices().removeIf(d -> d.getName().equals(name));
-    workspace.getRemovedServices().add(name);
+    Workspace ws = workspaceSupplier.get();
+    ws.getServices().removeIf(d -> d.getName().equals(name));
+    ws.getRemovedServices().add(name);
     persistWorkspace.run();
     persistRuntime.run();
     emitServicesChanged();
