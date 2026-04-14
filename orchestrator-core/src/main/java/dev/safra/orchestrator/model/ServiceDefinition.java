@@ -15,4 +15,6 @@ public class ServiceDefinition {
   private String javaHome;
   private String javaVersion;
   private List<String> containerIds;
+  private ProjectType projectType;
+  private List<String> availableScripts;
 }

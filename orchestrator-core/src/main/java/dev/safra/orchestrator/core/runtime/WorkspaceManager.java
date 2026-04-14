@@ -9,12 +9,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiConsumer;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.safra.orchestrator.model.ProjectType;
 import dev.safra.orchestrator.model.ServiceDefinition;
 import dev.safra.orchestrator.model.ServiceDescriptor;
 import dev.safra.orchestrator.model.ServiceRuntime;
@@ -28,6 +30,7 @@ public class WorkspaceManager {
   private final StateStore store;
   private final PortExtractor portExtractor;
   private final ProjectScanner scanner;
+  private final JsProjectScanner jsScanner;
   private final BiConsumer<String, JsonNode> emitEvent;
 
   private Workspace workspace;
@@ -46,6 +49,7 @@ public class WorkspaceManager {
     this.runtimeFile = stateDir.resolve("runtime.json");
     Path logsDir = stateDir.resolve("logs");
     this.scanner = new ProjectScanner(store, portExtractor, logsDir);
+    this.jsScanner = new JsProjectScanner(om, logsDir);
   }
 
   public Workspace getWorkspace() {
@@ -61,9 +65,9 @@ public class WorkspaceManager {
     }
 
     this.workspace = store.readJson(workspaceFile, Workspace.class).orElseGet(Workspace::new);
-    if (this.workspace.getContainers() == null)
+    if (workspace.getContainers() == null)
       workspace.setContainers(new HashMap<>());
-    if (this.workspace.getRemovedServices() == null)
+    if (workspace.getRemovedServices() == null)
       workspace.setRemovedServices(new HashSet<>());
 
     Map<String, ServiceRuntime> runtime = store.readJson(runtimeFile, new TypeReference<Map<String, ServiceRuntime>>() {
@@ -75,7 +79,8 @@ public class WorkspaceManager {
       if (def.getName() == null || def.getName().isBlank())
         continue;
       Path servicePath = Path.of(def.getPath());
-      if (Files.exists(servicePath)) {
+      boolean isSpring = def.getProjectType() == null || def.getProjectType() == ProjectType.SPRING_BOOT;
+      if (Files.exists(servicePath) && isSpring) {
         applyPortFromConfig(def, servicePath);
         if (def.getJavaVersion() == null || def.getJavaVersion().isBlank()) {
           Path pom = servicePath.resolve("pom.xml");
@@ -83,17 +88,17 @@ public class WorkspaceManager {
             def.setJavaVersion(scanner.extractJavaVersion(pom));
           }
         }
+        if (def.getProjectType() == null)
+          def.setProjectType(ProjectType.SPRING_BOOT);
       }
 
-      ServiceDescriptor sd = new ServiceDescriptor();
-      sd.setDefinition(def);
       if (def.getContainerIds() == null)
         def.setContainerIds(new ArrayList<>());
-
+      ServiceDescriptor sd = new ServiceDescriptor();
+      sd.setDefinition(def);
       ServiceRuntime rt = existing.containsKey(def.getName())
           ? existing.get(def.getName()).getRuntime()
           : runtime.getOrDefault(def.getName(), new ServiceRuntime());
-
       if (rt.getPid() != null) {
         boolean alive = ProcessHandle.of(rt.getPid()).map(ProcessHandle::isAlive).orElse(false);
         rt.setStatus(alive ? ServiceStatus.RUNNING : ServiceStatus.STOPPED);
@@ -119,45 +124,38 @@ public class WorkspaceManager {
     if (roots == null || roots.isEmpty())
       throw new IllegalArgumentException("params.roots é obrigatório");
 
-    List<Path> newRoots = new ArrayList<>();
-    List<Path> directServices = new ArrayList<>();
-
+    List<Path> importedPaths = new ArrayList<>();
+    List<ServiceDefinition> found = new ArrayList<>();
     for (String root : roots) {
       Path p = Path.of(root).toAbsolutePath().normalize();
-      if (Files.exists(p.resolve("pom.xml")) && !scanner.isAggregator(p.resolve("pom.xml"))) {
-        directServices.add(p);
-      } else {
-        newRoots.add(p);
-      }
+      importedPaths.add(p);
+      found.addAll(scanner.scanRoot(p, workspace.getExcludeDirs()));
+      found.addAll(jsScanner.scanRoot(p, workspace.getExcludeDirs()));
     }
 
-    boolean changed = false;
+    Set<String> existingNames = new HashSet<>();
+    for (ServiceDefinition s : workspace.getServices())
+      existingNames.add(s.getName());
 
-    for (Path rootPath : newRoots) {
-      if (!workspace.getRoots().contains(rootPath.toString())) {
-        workspace.getRoots().add(rootPath.toString());
-        changed = true;
-      }
+    int added = 0;
+    for (ServiceDefinition def : found) {
+      if (existingNames.contains(def.getName()))
+        continue;
+      if (def.getProjectType() == null)
+        continue;
+      Path defPath = Path.of(def.getPath());
+      boolean underImported = importedPaths.stream().anyMatch(defPath::startsWith);
+      if (!underImported)
+        continue;
+      workspace.getServices().add(def);
+      existingNames.add(def.getName());
+      added++;
     }
 
-    for (Path svcPath : directServices) {
-      List<ServiceDefinition> found = scanner.scanRoot(svcPath, workspace.getExcludeDirs());
-      for (ServiceDefinition def : found) {
-        workspace.getRemovedServices().remove(def.getName());
-        boolean exists = workspace.getServices().stream().anyMatch(s -> s.getName().equals(def.getName()));
-        if (!exists) {
-          workspace.getServices().add(def);
-          changed = true;
-        }
-      }
+    if (added > 0) {
+      syncServiceOrder();
+      persistWorkspace();
     }
-
-    if (changed)
-      workspace.getRemovedServices().clear();
-
-    persistWorkspace();
-    if (!newRoots.isEmpty())
-      return scanRoots();
 
     loadAll();
     emitEvent.accept("workspace", om.valueToTree(workspace));
@@ -187,8 +185,10 @@ public class WorkspaceManager {
     }
 
     List<ServiceDefinition> found = new ArrayList<>();
-    for (String r : workspace.getRoots())
+    for (String r : workspace.getRoots()) {
       found.addAll(scanner.scanRoot(Path.of(r), workspace.getExcludeDirs()));
+      found.addAll(jsScanner.scanRoot(Path.of(r), workspace.getExcludeDirs()));
+    }
 
     Map<String, ServiceDefinition> byName = new HashMap<>();
     for (ServiceDefinition d : found) {
@@ -224,6 +224,7 @@ public class WorkspaceManager {
     var r = sd.getRuntime();
     return new ServiceView(d.getName(), d.getPath(), d.getCommand(), d.getLogFile(),
         d.getEnv(), d.getJavaHome(), d.getJavaVersion(), d.getContainerIds(),
+        d.getProjectType(), d.getAvailableScripts(),
         r.getPid(), r.getStatus(), r.getLastStartAt(), r.getLastStopAt(), r.getLastError());
   }
 
@@ -240,34 +241,27 @@ public class WorkspaceManager {
   }
 
   public void syncServiceOrder() {
-    List<String> order = workspace.getServiceOrder();
-    if (order == null) {
+    if (workspace.getServiceOrder() == null)
       workspace.setServiceOrder(new ArrayList<>());
-      order = workspace.getServiceOrder();
-    }
+    List<String> order = workspace.getServiceOrder();
     List<String> existing = workspace.getServices().stream().map(ServiceDefinition::getName).toList();
     order.retainAll(existing);
-    for (String name : existing) {
-      if (!order.contains(name)) order.add(name);
-    }
+    existing.stream().filter(n -> !order.contains(n)).forEach(order::add);
   }
 
   public void syncContainerOrder() {
-    List<String> order = workspace.getContainerOrder();
-    if (order == null) {
+    if (workspace.getContainerOrder() == null)
       workspace.setContainerOrder(new ArrayList<>());
-      order = workspace.getContainerOrder();
-    }
+    List<String> order = workspace.getContainerOrder();
     List<String> existing = new ArrayList<>(workspace.getContainers().keySet());
     order.retainAll(existing);
-    for (String id : existing) {
-      if (!order.contains(id)) order.add(id);
-    }
+    existing.stream().filter(id -> !order.contains(id)).forEach(order::add);
   }
 
   List<ServiceView> sortedViews(List<ServiceView> views) {
     List<String> order = workspace.getServiceOrder();
-    if (order == null || order.isEmpty()) return views;
+    if (order == null || order.isEmpty())
+      return views;
     return views.stream()
         .sorted(Comparator.comparingInt(v -> {
           int idx = order.indexOf(v.name());
@@ -295,22 +289,16 @@ public class WorkspaceManager {
     if (def.getEnv() == null)
       def.setEnv(new HashMap<>());
     def.getEnv().put("SERVER_PORT", String.valueOf(port));
-
     List<String> cmd = new ArrayList<>(def.getCommand());
-    boolean updated = false;
     for (int i = 0; i < cmd.size(); i++) {
       if (cmd.get(i).startsWith("-Dspring-boot.run.arguments=--server.port=")) {
         cmd.set(i, "-Dspring-boot.run.arguments=--server.port=" + port);
-        updated = true;
-        break;
+        def.setCommand(cmd);
+        return;
       }
     }
-    if (updated) {
-      def.setCommand(cmd);
-    } else {
-      String mvnCmd = Files.exists(servicePath.resolve("mvnw")) ? "./mvnw" : "mvn";
-      def.setCommand(
-          List.of(mvnCmd, "-q", "-DskipTests", "-Dspring-boot.run.arguments=--server.port=" + port, "spring-boot:run"));
-    }
+    String mvnCmd = Files.exists(servicePath.resolve("mvnw")) ? "./mvnw" : "mvn";
+    def.setCommand(
+        List.of(mvnCmd, "-q", "-DskipTests", "-Dspring-boot.run.arguments=--server.port=" + port, "spring-boot:run"));
   }
 }

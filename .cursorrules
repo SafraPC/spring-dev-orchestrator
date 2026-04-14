@@ -36,6 +36,7 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 | ContainerManager | Container CRUD, service linking | core.runtime |
 | LogManager | Log subscriptions, emit lines | core.runtime |
 | ProjectScanner | Walk dirs, find pom.xml, detect Spring Boot | core.runtime |
+| JsProjectScanner | Walk dirs, find package.json, detect Next/Nest/React/Vue | core.runtime |
 | PortExtractor | Read port from application.properties/yml | core.runtime |
 | ExternalToolLauncher | Open folder/terminal/editor | core.runtime |
 | StateStore | JSON read/write to files | core.runtime |
@@ -44,7 +45,8 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 ### Models
 | Model | Type | Fields |
 |-------|------|--------|
-| ServiceDefinition | Lombok @Data | name, path, command, logFile, env, javaHome, containerIds |
+| ServiceDefinition | Lombok @Data | name, path, command, logFile, env, javaHome, javaVersion, containerIds, projectType, availableScripts |
+| ProjectType | Enum | SPRING_BOOT, NEXT, NEST, REACT, VUE, UNKNOWN |
 | ServiceDescriptor | Lombok @Data | definition, runtime |
 | ServiceRuntime | Lombok @Data | pid, status, lastStartAt, lastStopAt, lastError |
 | Container | Lombok @Data | id, name, description |
@@ -96,7 +98,8 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 | ServiceTable | ui/ServiceTable.tsx | Service list, actions |
 | ContextMenu | ui/ContextMenu.tsx | Service context menu with hover submenus |
 | ContainersPanel | ui/ContainersPanel.tsx | Container CRUD, start/stop container |
-| LogsPanel | ui/LogsPanel.tsx | Log stream, search, copy, level colors |
+| LogsPanel | ui/LogsPanel.tsx | Log stream, search, copy, level colors, monitor tab |
+| MonitorPanel | ui/MonitorPanel.tsx | Aggregated container logs with colored service badges |
 | StatusBar | ui/StatusBar.tsx | Running/stopped/error counts |
 | Toast | ui/Toast.tsx | Toast notifications + useToast hook |
 | ImportSection | ui/ImportSection.tsx | Root path import form |

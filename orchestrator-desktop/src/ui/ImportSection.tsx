@@ -42,7 +42,8 @@ export function ImportSection(props: {
         setRootInput("");
         await props.onImported();
       } else {
-        props.addToast("error", "Nenhum serviço Spring Boot encontrado.");
+        props.addToast("error", "Nenhum serviço encontrado.");
+        await props.onImported();
       }
     } catch (e) {
       props.addToast("error", e instanceof Error ? e.message : "Erro ao importar");

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { ServiceDto } from "../api/types";
 import { Icon } from "./Icons";
+import { MonitorPanel } from "./MonitorPanel";
 import { Tooltip } from "./Tooltip";
 
 type CoreEvent = { event: string; payload: Record<string, unknown> };
@@ -28,7 +29,52 @@ const COLORS: Record<ReturnType<typeof classify>, string> = {
 
 import type { ToastType } from "./Toast";
 
-export function LogsPanel(props: { service: ServiceDto | null; fontSize?: number; lineWrap?: boolean; onToast?: (t: ToastType, m: string) => void }) {
+export function LogsPanel(props: {
+  service: ServiceDto | null;
+  selectedContainer?: string | null;
+  containerServices?: ServiceDto[];
+  fontSize?: number;
+  lineWrap?: boolean;
+  onToast?: (t: ToastType, m: string) => void;
+}) {
+  const [mode, setMode] = useState<"service" | "monitor">("service");
+  const canMonitor = (props.containerServices?.length ?? 0) >= 2 && !!props.selectedContainer;
+
+  useEffect(() => { if (!canMonitor) setMode("service"); }, [canMonitor]);
+
+  if (mode === "monitor" && canMonitor) {
+    return (
+      <div className="flex h-full flex-col">
+        <MonitorTabs mode={mode} onMode={setMode} canMonitor={canMonitor} />
+        <MonitorPanel services={props.containerServices!} fontSize={props.fontSize} lineWrap={props.lineWrap} onToast={props.onToast} />
+      </div>
+    );
+  }
+
+  return <ServiceLogView service={props.service} fontSize={props.fontSize} lineWrap={props.lineWrap} onToast={props.onToast} mode={mode} onMode={setMode} canMonitor={canMonitor} />;
+}
+
+function MonitorTabs(props: { mode: "service" | "monitor"; onMode: (m: "service" | "monitor") => void; canMonitor: boolean }) {
+  if (!props.canMonitor) return null;
+  return (
+    <div className="flex items-center gap-1 px-4 pt-2 shrink-0">
+      <button className={`rounded-md px-2.5 py-1 text-2xs font-medium transition-all duration-150 ${props.mode === "service" ? "bg-accent/15 text-accent" : "text-slate-500 hover:text-slate-300 hover:bg-surface-3"}`}
+        onClick={() => props.onMode("service")}>Serviço</button>
+      <button className={`rounded-md px-2.5 py-1 text-2xs font-medium transition-all duration-150 ${props.mode === "monitor" ? "bg-accent/15 text-accent" : "text-slate-500 hover:text-slate-300 hover:bg-surface-3"}`}
+        onClick={() => props.onMode("monitor")}>Monitor</button>
+    </div>
+  );
+}
+
+function ServiceLogView(props: {
+  service: ServiceDto | null;
+  fontSize?: number;
+  lineWrap?: boolean;
+  onToast?: (t: ToastType, m: string) => void;
+  mode: "service" | "monitor";
+  onMode: (m: "service" | "monitor") => void;
+  canMonitor: boolean;
+}) {
   const [lines, setLines] = useState<string[]>([]);
   const [connected, setConnected] = useState(false);
   const [hasLogs, setHasLogs] = useState(false);
@@ -128,6 +174,7 @@ export function LogsPanel(props: { service: ServiceDto | null; fontSize?: number
 
   return (
     <div className="flex h-full flex-col select-none">
+      <MonitorTabs mode={props.mode} onMode={props.onMode} canMonitor={props.canMonitor} />
       <div className="px-4 py-2.5 shrink-0 space-y-2">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">

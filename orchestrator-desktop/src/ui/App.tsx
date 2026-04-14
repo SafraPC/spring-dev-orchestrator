@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { api } from "../api/client";
-import type { ContainerDto, JdkInfo, ServiceDto } from "../api/types";
+import type { ContainerDto, JdkInfo, ProjectType, ServiceDto } from "../api/types";
 import { ContainersPanel } from "./ContainersPanel";
 import { ImportSection } from "./ImportSection";
 import { LogsPanel } from "./LogsPanel";
@@ -14,16 +14,21 @@ import { Tooltip } from "./Tooltip";
 
 type CoreEvent = { event: string; payload: unknown };
 
+const TECH_LABELS: Record<string, string> = {
+  SPRING_BOOT: "Spring", NEXT: "Next", NEST: "Nest", REACT: "React", VUE: "Vue", UNKNOWN: "Outro",
+};
+
 export function App() {
   const [services, setServices] = useState<ServiceDto[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedContainer, setSelectedContainer] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
+  const [techFilter, setTechFilter] = useState<ProjectType | "">("");
   const [containersCollapsed, setContainersCollapsed] = useState(false);
   const [containers, setContainers] = useState<ContainerDto[]>([]);
   const [jdks, setJdks] = useState<JdkInfo[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sideW, setSideW] = useState(200);
+  const [sideW, setSideW] = useState(288);
   const [svcW, setSvcW] = useState(288);
   const { toasts, addToast, removeToast } = useToast();
   const { settings, setSettings } = useSettings();
@@ -93,11 +98,22 @@ export function App() {
     });
   }, []);
 
+  const availableTechs = useMemo(() => {
+    const set = new Set<ProjectType>();
+    for (const s of services) if (s.projectType) set.add(s.projectType);
+    return Array.from(set).sort();
+  }, [services]);
+
+  const containerServices = useMemo(() =>
+    selectedContainer ? services.filter((s) => s.containerIds?.includes(selectedContainer)) : [],
+    [services, selectedContainer]);
+
   const filteredServices = useMemo(() => {
-    let f = selectedContainer ? services.filter((s) => s.containerIds?.includes(selectedContainer)) : services;
+    let f = selectedContainer ? containerServices : services;
+    if (techFilter) f = f.filter((s) => (s.projectType ?? "SPRING_BOOT") === techFilter);
     if (filterText) { const t = filterText.toLowerCase(); f = f.filter((s) => s.name.toLowerCase().includes(t) || s.path.toLowerCase().includes(t)); }
     return f;
-  }, [services, selectedContainer, filterText]);
+  }, [services, containerServices, selectedContainer, filterText, techFilter]);
 
   return (
     <div className="flex h-screen flex-col bg-surface-0 overflow-hidden">
@@ -122,9 +138,18 @@ export function App() {
           <div className="px-3 py-2.5 border-b border-white/[0.04] space-y-2">
             <ContainerTabs containers={containers} selectedContainer={selectedContainer} onSelect={async (id) => { setSelectedContainer(id); setFilterText(""); await refresh(); }} />
             <ImportSection onImported={refresh} addToast={addToast} />
-            <div className="relative">
-              <Icon.Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-600 pointer-events-none" />
-              <input type="text" placeholder="Filtrar serviços..." value={filterText} onChange={(e) => setFilterText(e.target.value)} className="input pl-7 text-2xs" />
+            <div className="flex items-center gap-1.5">
+              <div className="relative flex-1 min-w-0">
+                <Icon.Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-600 pointer-events-none" />
+                <input type="text" placeholder="Filtrar..." value={filterText} onChange={(e) => setFilterText(e.target.value)} className="input pl-7 text-2xs" />
+              </div>
+              {availableTechs.length > 1 && (
+                <select value={techFilter} onChange={(e) => setTechFilter(e.target.value as ProjectType | "")}
+                  className="input text-2xs px-1.5 py-1 w-auto shrink-0 cursor-pointer bg-surface-2 border-white/[0.06]">
+                  <option value="">Todos</option>
+                  {availableTechs.map((t) => <option key={t} value={t}>{TECH_LABELS[t]}</option>)}
+                </select>
+              )}
             </div>
           </div>
           <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
@@ -135,7 +160,7 @@ export function App() {
         <ResizeHandle value={svcW} onChange={setSvcW} min={220} max={450} />
 
         <section className="flex flex-1 min-w-0 flex-col relative">
-          <LogsPanel service={selectedService} fontSize={settings.fontSize} lineWrap={settings.logLineWrap} onToast={addToast} />
+          <LogsPanel service={selectedService} selectedContainer={selectedContainer} containerServices={containerServices} fontSize={settings.fontSize} lineWrap={settings.logLineWrap} onToast={addToast} />
         </section>
       </main>
 

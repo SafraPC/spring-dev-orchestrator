@@ -74,6 +74,29 @@ export function ContainersPanel(props: {
       .finally(() => setBusyContainers((prev) => { const n = { ...prev }; delete n[c.id]; return n; }));
   }
 
+  async function handleImportIntoContainer(c: ContainerDto) {
+    try {
+      const picked = await api.selectFolder();
+      if (!picked?.trim()) return;
+      const paths = picked.trim().split("|").filter(Boolean);
+      const before = await api.listServices();
+      const beforeNames = new Set(before.map((s) => s.name));
+      const result = await api.importRootsAndScan(paths);
+      const all = Array.isArray(result) ? result : [];
+      const added = all.filter((s) => !beforeNames.has(s.name));
+      if (added.length === 0) {
+        props.onToast?.("info", "Nenhum serviço novo encontrado.");
+        await props.onRefresh();
+        return;
+      }
+      for (const s of added) await api.addServiceToContainer(s.name, c.id);
+      props.onToast?.("success", `${added.length} serviço(s) importado(s) em "${c.name}"`);
+      await props.onRefresh();
+    } catch (e) {
+      props.onToast?.("error", e instanceof Error ? e.message : String(e));
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="px-3 pt-3 pb-1 shrink-0">
@@ -136,6 +159,11 @@ export function ContainersPanel(props: {
                     <Tooltip text="Excluir">
                       <button className="rounded-md p-1 transition-all duration-100 disabled:opacity-30 text-slate-500 hover:bg-white/5 hover:text-danger" disabled={!!busy} onClick={() => setDeleteTarget(c)}>
                         <Icon.Trash className="h-3 w-3" />
+                      </button>
+                    </Tooltip>
+                    <Tooltip text="Importar serviços">
+                      <button className="rounded-md p-1 transition-all duration-100 disabled:opacity-30 text-slate-500 hover:bg-white/5 hover:text-accent" disabled={!!busy} onClick={() => void handleImportIntoContainer(c)}>
+                        <Icon.FolderImport className="h-3 w-3" />
                       </button>
                     </Tooltip>
                   </div>

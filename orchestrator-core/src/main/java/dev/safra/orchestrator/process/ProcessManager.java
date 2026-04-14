@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
+import dev.safra.orchestrator.model.ProjectType;
 import dev.safra.orchestrator.model.ServiceDefinition;
 
 public class ProcessManager {
@@ -28,6 +29,7 @@ public class ProcessManager {
 
   public long start(ServiceDefinition def) {
     validateDefinition(def);
+    freePort(def);
     try {
       Path workDir = Path.of(def.getPath()).toAbsolutePath().normalize();
       Path logPath = Path.of(def.getLogFile()).toAbsolutePath().normalize();
@@ -52,23 +54,17 @@ public class ProcessManager {
       pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logPath.toFile()));
 
       Map<String, String> env = pb.environment();
-      if (def.getEnv() != null) {
-        env.putAll(def.getEnv());
-      }
+      if (def.getEnv() != null) env.putAll(def.getEnv());
 
-      String javaHome = def.getJavaHome();
-      if (javaHome == null || javaHome.isBlank()) {
-        javaHome = detectJavaHome(def.getJavaVersion());
-      }
-
+      boolean isJava = def.getProjectType() == null || def.getProjectType() == ProjectType.SPRING_BOOT;
       String path = env.getOrDefault("PATH", "");
-      if (javaHome != null && !javaHome.isBlank()) {
-        env.put("JAVA_HOME", javaHome);
-        path = Path.of(javaHome, "bin") + ":" + path;
+
+      if (isJava) {
+        path = setupJavaPath(def, env, path);
+      } else {
+        path = setupNodePath(env, path);
       }
-      String home = System.getProperty("user.home");
-      String sdkmanMvn = home + "/.sdkman/candidates/maven/current/bin";
-      if (Files.isDirectory(Path.of(sdkmanMvn))) path = sdkmanMvn + ":" + path;
+
       for (String extra : new String[]{"/opt/homebrew/bin", "/usr/local/bin"}) {
         if (!path.contains(extra) && Files.isDirectory(Path.of(extra))) path = extra + ":" + path;
       }
@@ -76,12 +72,12 @@ public class ProcessManager {
 
       try {
         if (!Files.exists(logPath)) Files.createFile(logPath);
-        String jh = env.getOrDefault("JAVA_HOME", "system");
-        Files.writeString(logPath,
-            "[orchestrator] Iniciando com JAVA_HOME=" + jh + "\n",
-            java.nio.charset.StandardCharsets.UTF_8,
-            java.nio.file.StandardOpenOption.APPEND);
-      } catch (Exception e) {
+        String info = isJava
+            ? "[orchestrator] Iniciando com JAVA_HOME=" + env.getOrDefault("JAVA_HOME", "system")
+            : "[orchestrator] Iniciando projeto " + def.getProjectType();
+        Files.writeString(logPath, info + "\n",
+            java.nio.charset.StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.APPEND);
+      } catch (Exception ignored) {
       }
 
       Process p = pb.start();
@@ -148,6 +144,61 @@ public class ProcessManager {
 
   private String detectJavaHome(String requiredVersion) {
     return javaDetector.resolveJavaHome(requiredVersion);
+  }
+
+  private String setupJavaPath(ServiceDefinition def, Map<String, String> env, String path) {
+    String javaHome = def.getJavaHome();
+    if (javaHome == null || javaHome.isBlank()) javaHome = detectJavaHome(def.getJavaVersion());
+    if (javaHome != null && !javaHome.isBlank()) {
+      env.put("JAVA_HOME", javaHome);
+      path = Path.of(javaHome, "bin") + ":" + path;
+    }
+    String home = System.getProperty("user.home");
+    String sdkmanMvn = home + "/.sdkman/candidates/maven/current/bin";
+    if (Files.isDirectory(Path.of(sdkmanMvn))) path = sdkmanMvn + ":" + path;
+    return path;
+  }
+
+  private String setupNodePath(Map<String, String> env, String path) {
+    String home = System.getProperty("user.home");
+    String[] nodePaths = {
+        home + "/.nvm/versions/node",
+        home + "/.volta/bin",
+        home + "/.fnm/aliases/default/bin"
+    };
+    for (String dir : nodePaths) {
+      Path p = Path.of(dir);
+      if (!Files.isDirectory(p)) continue;
+      if (dir.endsWith("/node")) {
+        try (var stream = Files.list(p)) {
+          var latest = stream.filter(Files::isDirectory).max(java.util.Comparator.naturalOrder());
+          if (latest.isPresent()) path = latest.get().resolve("bin") + ":" + path;
+        } catch (Exception ignored) {}
+      } else {
+        path = dir + ":" + path;
+      }
+    }
+    return path;
+  }
+
+  private void freePort(ServiceDefinition def) {
+    if (def.getEnv() == null) return;
+    String portStr = def.getEnv().getOrDefault("SERVER_PORT", def.getEnv().get("PORT"));
+    if (portStr == null || portStr.isBlank()) return;
+    try {
+      int port = Integer.parseInt(portStr.trim());
+      Process lsof = new ProcessBuilder("lsof", "-ti", ":" + port)
+          .redirectErrorStream(true).start();
+      String output = new String(lsof.getInputStream().readAllBytes()).trim();
+      lsof.waitFor(5, TimeUnit.SECONDS);
+      if (output.isEmpty()) return;
+      for (String pidLine : output.split("\\R")) {
+        String pid = pidLine.trim();
+        if (!pid.isEmpty()) {
+          new ProcessBuilder("kill", "-9", pid).start().waitFor(3, TimeUnit.SECONDS);
+        }
+      }
+    } catch (Exception ignored) {}
   }
 
   private void monitorProcess(long pid, String serviceName) {

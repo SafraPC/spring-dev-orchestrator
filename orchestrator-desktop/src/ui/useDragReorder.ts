@@ -44,45 +44,30 @@ export function useDragReorder<T>(
     document.body.style.cursor = "grabbing";
     document.body.style.userSelect = "none";
 
-    let lastY = startClientY;
-    let accumulated = 0;
+    const centers: number[] = [];
+    let top = dragChildren[0].getBoundingClientRect().top;
+    for (let i = 0; i < heights.length; i++) {
+      centers.push(top + heights[i] / 2);
+      top += heights[i] + gap;
+    }
+    const originCenter = centers[srcIdx];
 
     const onMove = (ev: MouseEvent) => {
-      const deltaY = ev.clientY - lastY;
-      lastY = ev.clientY;
-      accumulated += deltaY;
+      const cursorCenter = originCenter + (ev.clientY - startClientY);
 
-      let newIdx = currentIdx;
-
-      if (accumulated > 0) {
-        let threshold = 0;
-        for (let i = currentIdx + 1; i < currentOrder.length; i++) {
-          threshold += (heights[i] + gap) / 2;
-          if (accumulated > threshold) newIdx = i;
-          else break;
-        }
-      } else if (accumulated < 0) {
-        let threshold = 0;
-        for (let i = currentIdx - 1; i >= 0; i--) {
-          threshold -= (heights[i] + gap) / 2;
-          if (accumulated < threshold) newIdx = i;
-          else break;
-        }
+      let newIdx = 0;
+      let minDist = Math.abs(cursorCenter - centers[0]);
+      for (let i = 1; i < centers.length; i++) {
+        const d = Math.abs(cursorCenter - centers[i]);
+        if (d < minDist) { minDist = d; newIdx = i; }
       }
 
       if (newIdx !== currentIdx) {
-        const copy = [...currentOrder];
-        const [moved] = copy.splice(currentIdx, 1);
+        const copy = [...srcItems];
+        const [moved] = copy.splice(srcIdx, 1);
         copy.splice(newIdx, 0, moved);
-
-        const movedH = heights[currentIdx];
-        heights.splice(currentIdx, 1);
-        heights.splice(newIdx, 0, movedH);
-
         currentOrder = copy;
         currentIdx = newIdx;
-        accumulated = 0;
-
         setLocalOrder(copy);
       }
     };

@@ -1,5 +1,7 @@
 export type ServiceStatus = "RUNNING" | "STOPPED" | "ERROR";
 
+export type ProjectType = "SPRING_BOOT" | "NEXT" | "NEST" | "REACT" | "VUE" | "UNKNOWN";
+
 export type ServiceDto = {
   name: string;
   path: string;
@@ -9,6 +11,8 @@ export type ServiceDto = {
   javaHome?: string;
   javaVersion?: string;
   containerIds?: string[];
+  projectType?: ProjectType;
+  availableScripts?: string[];
   pid?: number | null;
   status: ServiceStatus;
   lastStartAt?: string | null;

@@ -236,6 +236,7 @@ public class ServiceManager {
     return new ServiceView(
         def.getName(), def.getPath(), def.getCommand(), def.getLogFile(),
         def.getEnv(), def.getJavaHome(), def.getJavaVersion(), def.getContainerIds(),
+        def.getProjectType(), def.getAvailableScripts(),
         rt.getPid(), rt.getStatus(), rt.getLastStartAt(), rt.getLastStopAt(), rt.getLastError());
   }
 
@@ -267,36 +268,29 @@ public class ServiceManager {
   }
 
   private void scheduleHealthCheck(String name, long pid, ServiceDescriptor sd) {
-    Thread healthThread = new Thread(() -> {
+    Thread t = new Thread(() -> {
       try {
         Thread.sleep(2000);
-        if (!processManager.isAlive(pid)) {
-          ServiceRuntime rt = sd.getRuntime();
-          rt.setStatus(ServiceStatus.ERROR);
-          rt.setLastError("Processo terminou após iniciar. Verifique os logs.");
-          rt.setPid(null);
-
-          try {
-            Path logFile = Path.of(sd.getDefinition().getLogFile());
-            if (Files.exists(logFile)) {
-              List<String> allLines = Files.readAllLines(logFile);
-              if (!allLines.isEmpty()) {
-                int startIdx = Math.max(0, allLines.size() - 10);
-                String errorSummary = String.join("\n", allLines.subList(startIdx, allLines.size()));
-                logManager.emitLogStatus(name, "Processo terminou. Últimas linhas:\n" + errorSummary);
-              }
+        if (processManager.isAlive(pid)) return;
+        ServiceRuntime rt = sd.getRuntime();
+        rt.setStatus(ServiceStatus.ERROR);
+        rt.setLastError("Processo terminou após iniciar. Verifique os logs.");
+        rt.setPid(null);
+        try {
+          Path logFile = Path.of(sd.getDefinition().getLogFile());
+          if (Files.exists(logFile)) {
+            List<String> lines = Files.readAllLines(logFile);
+            if (!lines.isEmpty()) {
+              String tail = String.join("\n", lines.subList(Math.max(0, lines.size() - 10), lines.size()));
+              logManager.emitLogStatus(name, "Processo terminou. Últimas linhas:\n" + tail);
             }
-          } catch (Exception ignored) {
           }
-
-          persistRuntime.run();
-          emitServiceChanged(name);
-        }
-      } catch (InterruptedException ignored) {
-        Thread.currentThread().interrupt();
-      }
+        } catch (Exception ignored) {}
+        persistRuntime.run();
+        emitServiceChanged(name);
+      } catch (InterruptedException ignored) { Thread.currentThread().interrupt(); }
     }, "check-alive-" + name);
-    healthThread.setDaemon(true);
-    healthThread.start();
+    t.setDaemon(true);
+    t.start();
   }
 }

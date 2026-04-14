@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import dev.safra.orchestrator.model.ProjectType;
 import dev.safra.orchestrator.model.ServiceDefinition;
 
 public class ProjectScanner {
@@ -65,6 +66,7 @@ public class ProjectScanner {
           def.setPath(dir.toAbsolutePath().normalize().toString());
           def.setLogFile(logsDir.resolve(serviceName + ".log").toString());
           def.setContainerIds(new ArrayList<>());
+          def.setProjectType(ProjectType.SPRING_BOOT);
 
           Map<String, String> env = new HashMap<>();
           env.put("SERVER_PORT", String.valueOf(port));

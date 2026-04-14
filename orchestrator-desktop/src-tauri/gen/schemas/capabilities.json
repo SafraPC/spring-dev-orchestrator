@@ -1,1 +1,1 @@
-{"main-capabilities":{"identifier":"main-capabilities","description":"Capabilities for the main application","local":true,"windows":["main"],"permissions":["core:default","dialog:default"]}}
+{"main-capabilities":{"identifier":"main-capabilities","description":"Capabilities for the main application","local":true,"windows":["main"],"permissions":["core:default","dialog:default","opener:default"]}}

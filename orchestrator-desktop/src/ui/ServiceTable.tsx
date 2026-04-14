@@ -1,12 +1,20 @@
 import { useCallback, useState } from "react";
 import { api } from "../api/client";
-import type { ContainerDto, JdkInfo, ServiceDto } from "../api/types";
+import type { ContainerDto, JdkInfo, ProjectType, ServiceDto } from "../api/types";
 import { ContextMenu } from "./ContextMenu";
 import { Icon } from "./Icons";
 import { Modal } from "./Modal";
 import type { ToastType } from "./Toast";
 import { Tooltip } from "./Tooltip";
 import { useDragReorder } from "./useDragReorder";
+
+const TECH_BADGE: Record<string, { icon: keyof typeof Icon; color: string; label: string }> = {
+  SPRING_BOOT: { icon: "Java", color: "text-orange-400", label: "Java" },
+  NEXT: { icon: "Next", color: "text-white", label: "Next" },
+  NEST: { icon: "Nest", color: "text-red-400", label: "Nest" },
+  REACT: { icon: "ReactIcon", color: "text-cyan-400", label: "React" },
+  VUE: { icon: "Vue", color: "text-emerald-400", label: "Vue" },
+};
 
 function uptime(at: string | null | undefined): string | null {
   if (!at) return null;
@@ -20,11 +28,16 @@ function uptime(at: string | null | undefined): string | null {
 }
 
 export function ServiceTable(props: {
-  services: ServiceDto[]; allServices?: ServiceDto[];
-  selected: string | null; onSelect: (name: string) => void;
-  onAction: () => Promise<void>; onServicesUpdate?: (s: ServiceDto[]) => void;
-  selectedContainer?: string | null; containers?: ContainerDto[];
-  jdks?: JdkInfo[]; onToast?: (t: ToastType, m: string) => void;
+  services: ServiceDto[];
+  allServices?: ServiceDto[];
+  selected: string | null;
+  onSelect: (name: string) => void;
+  onAction: () => Promise<void>;
+  onServicesUpdate?: (s: ServiceDto[]) => void;
+  selectedContainer?: string | null;
+  containers?: ContainerDto[];
+  jdks?: JdkInfo[];
+  onToast?: (t: ToastType, m: string) => void;
   loading?: boolean;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -34,41 +47,66 @@ export function ServiceTable(props: {
   const [rmContTarget, setRmContTarget] = useState<{ svc: string; cid: string; cname: string } | null>(null);
 
   const allSvcs = props.allServices ?? props.services;
-  const handleReorder = useCallback((reordered: ServiceDto[]) => {
-    props.onServicesUpdate?.(reordered);
-    const subNames = new Set(reordered.map((s) => s.name));
-    const otherNames = allSvcs.filter((s) => !subNames.has(s.name)).map((s) => s.name);
-    const merged: string[] = [];
-    let oIdx = 0, sIdx = 0;
-    for (const s of allSvcs) {
-      if (subNames.has(s.name)) { if (sIdx < reordered.length) merged.push(reordered[sIdx++].name); }
-      else { if (oIdx < otherNames.length) merged.push(otherNames[oIdx++]); }
-    }
-    void api.reorderServices(merged);
-  }, [props.onServicesUpdate, allSvcs]);
-
-  const { items: orderedServices, containerRef, gripProps, activeId } = useDragReorder(
-    props.services, (s) => s.name, handleReorder
+  const handleReorder = useCallback(
+    (reordered: ServiceDto[]) => {
+      props.onServicesUpdate?.(reordered);
+      const subNames = new Set(reordered.map((s) => s.name));
+      const otherNames = allSvcs.filter((s) => !subNames.has(s.name)).map((s) => s.name);
+      const merged: string[] = [];
+      let oIdx = 0,
+        sIdx = 0;
+      for (const s of allSvcs) {
+        if (subNames.has(s.name)) {
+          if (sIdx < reordered.length) merged.push(reordered[sIdx++].name);
+        } else {
+          if (oIdx < otherNames.length) merged.push(otherNames[oIdx++]);
+        }
+      }
+      void api.reorderServices(merged);
+    },
+    [props.onServicesUpdate, allSvcs],
   );
+
+  const {
+    items: orderedServices,
+    containerRef,
+    gripProps,
+    activeId,
+  } = useDragReorder(props.services, (s) => s.name, handleReorder);
 
   async function addTo(svc: string, cid: string) {
     setMenuOpen(null);
-    try { const u = await api.addServiceToContainer(svc, cid); props.onServicesUpdate?.(u); await props.onAction(); }
-    catch (e) { props.onToast?.("error", String(e)); }
+    try {
+      const u = await api.addServiceToContainer(svc, cid);
+      props.onServicesUpdate?.(u);
+      await props.onAction();
+    } catch (e) {
+      props.onToast?.("error", String(e));
+    }
   }
 
   async function confirmRemoveService() {
     if (!deleteTarget) return;
     const name = deleteTarget;
     setDeleteTarget(null);
-    try { await api.removeService(name); await props.onAction(); props.onToast?.("success", `"${name}" removido`); }
-    catch (e) { props.onToast?.("error", String(e)); }
+    try {
+      await api.removeService(name);
+      await props.onAction();
+      props.onToast?.("success", `"${name}" removido`);
+    } catch (e) {
+      props.onToast?.("error", String(e));
+    }
   }
 
   async function confirmRmCont() {
     if (!rmContTarget) return;
-    try { const u = await api.removeServiceFromContainer(rmContTarget.svc, rmContTarget.cid); props.onServicesUpdate?.(u); await props.onAction(); }
-    catch (e) { props.onToast?.("error", String(e)); }
+    try {
+      const u = await api.removeServiceFromContainer(rmContTarget.svc, rmContTarget.cid);
+      props.onServicesUpdate?.(u);
+      await props.onAction();
+    } catch (e) {
+      props.onToast?.("error", String(e));
+    }
     setRmContTarget(null);
   }
 
@@ -76,7 +114,11 @@ export function ServiceTable(props: {
     return (
       <div className="px-2 pb-2 space-y-2">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="rounded-lg border border-white/[0.04] bg-surface-1 px-3 py-3 animate-pulse" style={{ animationDelay: `${i * 80}ms` }}>
+          <div
+            key={i}
+            className="rounded-lg border border-white/[0.04] bg-surface-1 px-3 py-3 animate-pulse"
+            style={{ animationDelay: `${i * 80}ms` }}
+          >
             <div className="flex items-center gap-2">
               <div className="h-3.5 w-3.5 rounded bg-surface-3" />
               <div className="h-2 w-2 rounded-full bg-surface-3" />
@@ -139,25 +181,28 @@ function ServiceRow(props: {
   const isError = s.status === "ERROR";
 
   return (
-    <div data-drag-item
+    <div
+      data-drag-item
       className={`group relative rounded-lg border px-3 py-2.5 cursor-pointer transition-all duration-200 ${sel ? "border-accent/25 bg-accent/[0.06] shadow-glow" : "border-white/[0.06] bg-surface-1 hover:border-white/[0.10] hover:bg-surface-2"} ${props.isDragging ? "opacity-40 scale-[0.98] shadow-lg shadow-accent/10 border-accent/30 bg-accent/[0.06]" : ""}`}
       onClick={props.onSelect}
     >
       <div className="flex items-center gap-2 min-w-0">
-        <span className="shrink-0 cursor-grab active:cursor-grabbing text-slate-600 opacity-40 group-hover:opacity-100 group-hover:text-slate-400 transition-all"
-          {...props.gripProps}>
+        <span
+          className="shrink-0 cursor-grab active:cursor-grabbing text-slate-600 opacity-40 group-hover:opacity-100 group-hover:text-slate-400 transition-all"
+          {...props.gripProps}
+        >
           <Icon.Grip className="h-3.5 w-3.5" />
         </span>
         <span className="relative flex h-2 w-2 shrink-0">
-          {isRunning && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-50" />}
-          <span className={`relative inline-flex h-2 w-2 rounded-full ${isRunning ? "bg-accent" : isError ? "bg-danger" : "bg-slate-600"}`} />
+          {isRunning && (
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-50" />
+          )}
+          <span
+            className={`relative inline-flex h-2 w-2 rounded-full ${isRunning ? "bg-accent" : isError ? "bg-danger" : "bg-slate-600"}`}
+          />
         </span>
         <span className={`truncate text-xs font-medium ${sel ? "text-slate-100" : "text-slate-200"}`}>{s.name}</span>
-        {s.javaVersion && (
-          <Tooltip text={`Java ${s.javaVersion} (projeto)`}>
-            <span className="shrink-0 rounded bg-surface-3 px-1 py-px text-[9px] font-mono font-semibold text-slate-500 leading-none">J{s.javaVersion}</span>
-          </Tooltip>
-        )}
+        <TechBadge projectType={s.projectType} javaVersion={s.javaVersion} />
         <div className="ml-auto flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
           {!isRunning && <Tooltip text="Iniciar"><ActionBtn icon="Play" cls="text-accent hover:bg-accent/10" disabled={isBusy} onClick={props.onStart} /></Tooltip>}
           {isRunning && (
@@ -201,5 +246,21 @@ function ActionBtn(props: { icon: keyof typeof Icon; cls: string; disabled?: boo
       onClick={(e) => { e.stopPropagation(); void props.onClick(); }}>
       <Ic className="h-3 w-3" />
     </button>
+  );
+}
+
+function TechBadge(props: { projectType?: ProjectType; javaVersion?: string | null }) {
+  const type = props.projectType ?? "SPRING_BOOT";
+  const badge = TECH_BADGE[type];
+  if (!badge) return null;
+  const Ic = Icon[badge.icon];
+  const label = type === "SPRING_BOOT" && props.javaVersion ? `J${props.javaVersion}` : badge.label;
+  return (
+    <Tooltip text={badge.label}>
+      <span className={`shrink-0 inline-flex items-center gap-0.5 rounded bg-surface-3 px-1 py-px text-[9px] font-mono font-semibold leading-none ${badge.color}`}>
+        <Ic className="h-3.5 w-3.5" />
+        {label}
+      </span>
+    </Tooltip>
   );
 }

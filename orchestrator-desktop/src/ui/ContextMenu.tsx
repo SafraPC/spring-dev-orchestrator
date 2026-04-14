@@ -1,5 +1,6 @@
 import { useRef, useState, useLayoutEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api/client";
 import type { ContainerDto, JdkInfo, ServiceDto } from "../api/types";
 import { Icon } from "./Icons";
@@ -69,9 +70,9 @@ export function ContextMenu(props: {
           <MenuItem icon="Folder" label="Abrir pasta" onClick={async () => { props.onClose(); await api.openServiceFolder(s.name).catch(() => {}); }} />
           <MenuItem icon="Terminal" label="Abrir terminal" onClick={async () => { props.onClose(); await api.openServiceTerminal(s.name).catch(() => {}); }} />
           <MenuItem icon="Code" label="Abrir no editor" onClick={async () => { props.onClose(); await api.openServiceInEditor(s.name).catch(() => {}); }} />
-          {props.port && <MenuItem icon="Globe" label={`localhost:${props.port}`} onClick={() => { props.onClose(); window.open(`http://localhost:${props.port}`, "_blank"); }} />}
+          {props.port && <MenuItem icon="Globe" label={`localhost:${props.port}`} onClick={async () => { props.onClose(); await openUrl(`http://localhost:${props.port}`).catch(() => {}); }} />}
 
-          {uniqueVersions.length > 0 && (
+          {uniqueVersions.length > 0 && (!s.projectType || s.projectType === "SPRING_BOOT") && (
             <>
               <div className="divider my-1" />
               <SubMenu label="Java Version" icon="Code" isOpen={openSub === "java"}

@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import dev.safra.orchestrator.model.ProjectType;
 import dev.safra.orchestrator.model.ServiceStatus;
 
 public record ServiceView(
@@ -15,6 +16,8 @@ public record ServiceView(
         String javaHome,
         String javaVersion,
         List<String> containerIds,
+        ProjectType projectType,
+        List<String> availableScripts,
         Long pid,
         ServiceStatus status,
         Instant lastStartAt,
