@@ -90,20 +90,20 @@ Pré-condição:
 
 **macOS (Intel/Apple Silicon)**
 
-- Script automático: [instalar no macOS](https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh)
+- Release: [baixar instalador macOS](https://github.com/SafraPC/spring-dev-orchestrator/releases/latest)
 - Comando 1 linha:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh | bash
+curl -fsSL https://github.com/SafraPC/spring-dev-orchestrator/releases/latest/download/install.sh | bash
 ```
 
 **Linux Ubuntu / Debian**
 
-- Script automático: [instalar no Linux](https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh)
+- Release: [baixar instalador Linux](https://github.com/SafraPC/spring-dev-orchestrator/releases/latest)
 - Comando 1 linha:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh | bash
+curl -fsSL https://github.com/SafraPC/spring-dev-orchestrator/releases/latest/download/install.sh | bash
 ```
 
 Prioridade de pacote no Ubuntu/Debian:
@@ -112,11 +112,11 @@ Prioridade de pacote no Ubuntu/Debian:
 
 **Linux Arch**
 
-- Script automático: [instalar no Arch](https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh)
+- Release: [baixar instalador Arch](https://github.com/SafraPC/spring-dev-orchestrator/releases/latest)
 - Comando 1 linha:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh | bash
+curl -fsSL https://github.com/SafraPC/spring-dev-orchestrator/releases/latest/download/install.sh | bash
 ```
 
 Prioridade de pacote no Arch:
@@ -125,11 +125,11 @@ Prioridade de pacote no Arch:
 
 **Windows**
 
-- Script automático: [instalar no Windows](https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.ps1)
+- Release: [baixar instalador Windows](https://github.com/SafraPC/spring-dev-orchestrator/releases/latest)
 - Comando PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.ps1 | iex
+irm https://github.com/SafraPC/spring-dev-orchestrator/releases/latest/download/install.ps1 | iex
 ```
 
 Prioridade de pacote no Windows:
