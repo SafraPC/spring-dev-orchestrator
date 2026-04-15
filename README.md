@@ -41,6 +41,12 @@ Prebuilt installers are published with every release.
 
 Repository-based installs can use `scripts/install/install.sh` or `scripts/install/install.ps1` to select the latest compatible asset automatically.
 
+Linux one-line install:
+
+```bash
+curl -fsSL https://github.com/SafraPC/orchestrator/releases/latest/download/install.sh | bash
+```
+
 ## Requirements
 
 Orchestrator has two different requirement sets: one for using the released app, and one for developing this repository.
@@ -132,6 +138,30 @@ Prefer `.deb` on Debian and Ubuntu.
 Prefer distro packages over `.AppImage` when possible.
 
 </details>
+
+## Installation
+
+If you skipped the download section, use one of the options below.
+
+### Desktop installers
+
+- macOS: [Download the latest `.dmg`](https://github.com/SafraPC/orchestrator/releases/latest)
+- Windows: [Download the latest `.msi`](https://github.com/SafraPC/orchestrator/releases/latest)
+- Linux: [Download the latest `.deb` or `.AppImage`](https://github.com/SafraPC/orchestrator/releases/latest)
+
+### Linux install with curl
+
+This is the simplest Linux path for Debian, Ubuntu, Arch, and generic distributions.
+
+```bash
+curl -fsSL https://github.com/SafraPC/orchestrator/releases/latest/download/install.sh | bash
+```
+
+### Security prompts
+
+- Windows: `SmartScreen` warnings will continue until the installer is code-signed with a trusted certificate.
+- Ubuntu and Debian: a standalone `.deb` downloaded from the browser is not the same as installing from a signed APT repository, so software centers may still show an unknown source warning.
+- Linux CLI installation is recommended when you want to avoid the GUI installer path for the downloaded `.deb`.
 
 ## Why Orchestrator
 

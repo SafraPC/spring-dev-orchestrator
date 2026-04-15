@@ -1,8 +1,11 @@
 [package]
 name = "Orchestrator"
-version = "0.2.0"
+version = "0.2.1"
 description = "Orchestrator Desktop (Tauri)"
 authors = ["Leandro Safra"]
+license = "MIT"
+repository = "https://github.com/SafraPC/orchestrator"
+homepage = "https://github.com/SafraPC/orchestrator"
 edition = "2021"
 
 [build-dependencies]

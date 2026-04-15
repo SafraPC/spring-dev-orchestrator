@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.safra.orchestrator</id>
+  <name>Orchestrator</name>
+  <summary>Desktop orchestration for local Spring and JavaScript projects.</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="dev.safra">
+    <name>SafraPC</name>
+  </developer>
+  <launchable type="desktop-id">Orchestrator.desktop</launchable>
+  <url type="homepage">https://github.com/SafraPC/orchestrator</url>
+  <description>
+    <p>Import local Spring and JavaScript projects, organize them into logical containers, start and stop services, and follow logs from a single desktop application.</p>
+  </description>
+  <categories>
+    <category>Development</category>
+  </categories>
+</component>
