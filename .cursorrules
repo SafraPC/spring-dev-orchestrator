@@ -121,6 +121,13 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 - `scripts/install/install.ps1` — install automático para Windows via release latest
 - Output: `.app`/`.dmg` in `orchestrator-desktop/src-tauri/target/release/bundle/`
 
+## Runtime Requirements
+- Released desktop app bundles the core JAR but still launches it with system `java`
+- End-user machine must have Java 17+ available on `PATH`
+- `JAVA_HOME` is the recommended default JDK for Spring Boot services
+- End users do not need Rust, Maven, or Node.js to open the desktop app itself
+- Node.js and Maven are only needed when imported services depend on them or when developing the repo
+
 ## Tech Stack
 - Java 17 (Maven, Jackson, Lombok for models)
 - Rust (Tauri 2.x)
