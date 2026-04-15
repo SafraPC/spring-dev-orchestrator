@@ -84,6 +84,10 @@ Use links diretos.
 
 ### Instalação automática por sistema
 
+Pré-condição:
+- existe release publicada com assets nativos
+- para repositório privado, exporte `GITHUB_TOKEN`
+
 **macOS (Intel/Apple Silicon)**
 
 - Script automático: [instalar no macOS](https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh)
@@ -93,7 +97,7 @@ Use links diretos.
 curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh | bash
 ```
 
-**Linux Ubuntu / Arch e derivados**
+**Linux Ubuntu / Debian**
 
 - Script automático: [instalar no Linux](https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh)
 - Comando 1 linha:
@@ -101,6 +105,23 @@ curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/mai
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh | bash
 ```
+
+Prioridade de pacote no Ubuntu/Debian:
+- `.deb` (preferencial)
+- `.AppImage` (fallback)
+
+**Linux Arch**
+
+- Script automático: [instalar no Arch](https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh)
+- Comando 1 linha:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.sh | bash
+```
+
+Prioridade de pacote no Arch:
+- `.AppImage` (preferencial)
+- `.pkg.tar.zst` (se publicado)
 
 **Windows**
 
@@ -110,6 +131,10 @@ curl -fsSL https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/mai
 ```powershell
 irm https://raw.githubusercontent.com/SafraPC/spring-dev-orchestrator/main/scripts/install/install.ps1 | iex
 ```
+
+Prioridade de pacote no Windows:
+- `.msi` (preferencial)
+- `.exe` (fallback)
 
 ### Downloads diretos por release
 
