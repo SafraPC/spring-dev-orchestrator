@@ -1,3 +1,8 @@
+use crate::java_env::{
+  apply_no_window, is_probable_windows_store_stub_path, java_version_requirement_error, parse_java_major_from_version_output,
+  prepend_java_home_bin, MINIMUM_JAVA_MAJOR,
+};
+use dunce::simplified;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::ffi::OsString;
@@ -26,6 +31,23 @@ pub fn state_dir(app: &tauri::AppHandle) -> PathBuf {
   base.join("orchestrator")
 }
 
+pub fn core_stderr_tail_hint(app: &tauri::AppHandle) -> String {
+  let path = state_dir(app).join("desktop-logs").join("core.stderr.log");
+  let Ok(raw) = fs::read_to_string(path) else {
+    return String::new();
+  };
+  let lines: Vec<&str> = raw.lines().collect();
+  if lines.is_empty() {
+    return String::new();
+  }
+  let start = lines.len().saturating_sub(12);
+  let tail = lines[start..].join("\n");
+  if tail.trim().is_empty() {
+    return String::new();
+  }
+  format!("\n{}", tail)
+}
+
 fn runtime_settings_path(app: &tauri::AppHandle) -> PathBuf {
   state_dir(app).join("desktop-settings.json")
 }
@@ -46,7 +68,14 @@ pub fn write_runtime_settings(app: &tauri::AppHandle, settings: &RuntimeSettings
 }
 
 pub fn validate_java_runtime_path(raw: &str) -> Result<(), String> {
-  resolve_java_runtime_from_path(raw).map(|_| ())
+  let resolved = resolve_java_runtime_from_path(raw)?;
+  if is_probable_windows_store_stub_path(resolved.command.as_os_str()) {
+    return Err(
+      "Este caminho aponta para o Java da Microsoft Store. Use o java.exe do JDK 17+ (ex.: Temurin) em Program Files ou defina JAVA_HOME."
+        .to_string(),
+    );
+  }
+  Ok(())
 }
 
 fn shell_path_entries() -> Vec<PathBuf> {
@@ -80,6 +109,7 @@ fn prepend_unique_path(entries: &mut Vec<PathBuf>, entry: PathBuf) {
 
 fn current_path_entries() -> Vec<PathBuf> {
   let mut entries = shell_path_entries();
+  prepend_java_home_bin(&mut entries);
   let fallback = env::var_os("PATH").unwrap_or_default();
   for entry in env::split_paths(&fallback) {
     append_unique_path(&mut entries, entry);
@@ -172,10 +202,6 @@ fn join_path_entries(entries: &[PathBuf]) -> Result<OsString, String> {
   env::join_paths(entries).map_err(|e| format!("Falha ao montar PATH: {e}"))
 }
 
-fn java_missing_message() -> String {
-  "Java não encontrado no PATH. Configure a pasta do Java ou o executável nas Configurações.".to_string()
-}
-
 fn java_command_name() -> &'static str {
   if cfg!(windows) { "java.exe" } else { "java" }
 }
@@ -206,11 +232,31 @@ fn apply_java_env(command: &mut Command, path: &OsString, java_home: Option<&Pat
   }
 }
 
-fn java_check_status(command: &OsString, path: &OsString, java_home: Option<&PathBuf>) -> std::io::Result<()> {
+fn verify_java_for_core(command: &OsString, path: &OsString, java_home: Option<&PathBuf>) -> Result<(), String> {
+  if is_probable_windows_store_stub_path(command.as_os_str()) {
+    return Err(
+      "O caminho do Java aponta para o instalador da Microsoft Store. Instale um JDK 17+ (Temurin) ou escolha java.exe da pasta bin do JDK nas Configurações."
+        .to_string(),
+    );
+  }
   let mut check = Command::new(command);
-  check.arg("-version").stdout(Stdio::null()).stderr(Stdio::null());
+  check.arg("-version");
+  check.stdout(Stdio::piped());
+  check.stderr(Stdio::piped());
   apply_java_env(&mut check, path, java_home);
-  check.status().map(|_| ())
+  apply_no_window(&mut check);
+  let output = check
+    .output()
+    .map_err(|e| format!("Não foi possível executar java -version: {e}"))?;
+  let mut combined = String::new();
+  combined.push_str(&String::from_utf8_lossy(&output.stderr));
+  combined.push_str(&String::from_utf8_lossy(&output.stdout));
+  let major = parse_java_major_from_version_output(&combined);
+  let ok = major.map(|v| v >= MINIMUM_JAVA_MAJOR).unwrap_or(false);
+  if ok {
+    return Ok(());
+  }
+  Err(java_version_requirement_error(major, &combined))
 }
 
 pub fn spawn_core(app: &tauri::AppHandle, jar: &Path) -> std::io::Result<(Child, ChildStdin, ChildStdout)> {
@@ -225,18 +271,18 @@ pub fn spawn_core(app: &tauri::AppHandle, jar: &Path) -> std::io::Result<(Child,
   let stderr_file = fs::File::create(log_dir.join("core.stderr.log"))?;
 
   let (java_command, path, java_home) = prepare_java_launch(app).map_err(java_startup_error)?;
-  if java_check_status(&java_command, &path, java_home.as_ref()).is_err() {
-    return Err(java_startup_error(java_missing_message()));
+  if let Err(message) = verify_java_for_core(&java_command, &path, java_home.as_ref()) {
+    return Err(java_startup_error(message));
   }
 
+  let state_core = state.join("core");
   let mut command = Command::new(&java_command);
+  apply_no_window(&mut command);
   command
-    .args([
-      "-jar",
-      jar.to_string_lossy().as_ref(),
-      "--stateDir",
-      state.join("core").to_string_lossy().as_ref(),
-    ])
+    .arg("-jar")
+    .arg(simplified(jar))
+    .arg("--stateDir")
+    .arg(simplified(&state_core))
     .stdin(stdin)
     .stdout(stdout)
     .stderr(Stdio::from(stderr_file));

@@ -6,6 +6,7 @@ version = 4
 name = "Orchestrator"
 version = "0.2.2"
 dependencies = [
+ "dunce",
  "serde",
  "serde_json",
  "tauri",

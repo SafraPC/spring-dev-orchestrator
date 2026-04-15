@@ -11,7 +11,7 @@ The old `orchestrator-ui/` module is DEPRECATED — all frontend lives in `orche
 orchestrator-core/          Java 17, fat JAR, stdin/stdout JSON IPC
 orchestrator-desktop/       Tauri (Rust) + React/Vite/Tailwind
   ├── src/                  React frontend (TSX)
-  ├── src-tauri/src/main.rs Rust bridge (CoreBridge)
+  ├── src-tauri/src/        main.rs (commands), core_bridge.rs (CoreBridge), java_runtime.rs, java_env.rs
   └── src-tauri/tauri.conf  Tauri config
 ```
 
@@ -85,12 +85,12 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 
 ## Desktop Module (Tauri + React)
 
-### Rust (src-tauri/src/main.rs)
-- CoreBridge: spawns Java JAR, manages stdin/stdout
-- core_request: Tauri command, sends IPC request, waits for response
-- select_folder: Tauri dialog for multi-folder selection (pipe-separated)
-- get/set runtime settings: persist desktop-only config in `desktop-settings.json`
-- Java startup accepts a custom Java folder or executable from Settings and restarts the core after save
+### Rust (src-tauri/src/)
+- `core_bridge.rs`: CoreBridge spawns Java JAR, stdin/stdout IPC reader thread; dev JAR path via `CARGO_MANIFEST_DIR/../../orchestrator-core/target/...` (não depende do cwd do processo)
+- `java_runtime.rs`: PATH/JAVA_HOME merge, `spawn_core`, stderr log `desktop-logs/core.stderr.log`
+- `java_env.rs`: Java 17+ check (`java -version` parse), `CREATE_NO_WINDOW` on Windows, reject Microsoft Store stub paths (`WindowsApps`)
+- `main.rs`: Tauri commands (`core_request`, settings, folder dialogs)
+- Windows: disable Store aliases for `java.exe` if `-version` output is empty; prefer `JAVA_HOME` or Settings JDK path (Temurin 17+)
 - Events emitted as "core_event" to UI
 
 ### React Components
@@ -117,7 +117,9 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 - Ctrl+F: search in logs
 
 ## Build
-- `./build.sh` — full build: core JAR → copy to Tauri → frontend build → Tauri build
+- `./build.sh` — full build: core JAR → copy to Tauri → frontend build → Tauri build (macOS/Linux/Git Bash)
+- `build.ps1` / `build.cmd` — mesmo fluxo no Windows; `build.cmd` chama `vcvars64.bat` (MSVC) quando existir Build Tools 2022, depois PowerShell com `ExecutionPolicy Bypass`
+- `build.ps1` antepõe `%LOCALAPPDATA%\OrchestratorBuildDeps` (Maven/Node portáteis se existirem), resolve `mvn`/`npm`/`cargo` via PATH, `MAVEN_HOME`, ou caminhos comuns; falha de passo propaga exit code
 - `./start.sh` — dev mode: core JAR → Vite dev → Tauri dev
 - `scripts/install/install.sh` — install automático para macOS/Linux via release latest
 - `scripts/install/install.ps1` — install automático para Windows via release latest
