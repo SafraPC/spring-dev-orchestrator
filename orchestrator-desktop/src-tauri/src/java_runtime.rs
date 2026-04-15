@@ -268,7 +268,14 @@ pub fn spawn_core(app: &tauri::AppHandle, jar: &Path) -> std::io::Result<(Child,
 
   let stdout = Stdio::piped();
   let stdin = Stdio::piped();
-  let stderr_file = fs::File::create(log_dir.join("core.stderr.log"))?;
+  let trace_stderr = std::env::var("ORCHESTRATOR_CORE_TRACE")
+    .map(|v| v == "1")
+    .unwrap_or(false);
+  let stderr = if trace_stderr {
+    Stdio::inherit()
+  } else {
+    Stdio::from(fs::File::create(log_dir.join("core.stderr.log"))?)
+  };
 
   let (java_command, path, java_home) = prepare_java_launch(app).map_err(java_startup_error)?;
   if let Err(message) = verify_java_for_core(&java_command, &path, java_home.as_ref()) {
@@ -279,13 +286,14 @@ pub fn spawn_core(app: &tauri::AppHandle, jar: &Path) -> std::io::Result<(Child,
   let mut command = Command::new(&java_command);
   apply_no_window(&mut command);
   command
+    .arg("-Dfile.encoding=UTF-8")
     .arg("-jar")
     .arg(simplified(jar))
     .arg("--stateDir")
     .arg(simplified(&state_core))
     .stdin(stdin)
     .stdout(stdout)
-    .stderr(Stdio::from(stderr_file));
+    .stderr(stderr);
   apply_java_env(&mut command, &path, java_home.as_ref());
 
   let mut child = command.spawn()?;

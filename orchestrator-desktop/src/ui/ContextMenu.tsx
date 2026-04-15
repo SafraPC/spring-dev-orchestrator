@@ -21,6 +21,7 @@ export function ContextMenu(props: {
   onDelete: () => void;
   onSetJava: (name: string, ver: string | null) => Promise<void>;
   onSetScript: (name: string, script: string) => Promise<void>;
+  onSetPort: (name: string, currentPort?: string) => void;
 }) {
   const { s } = props;
   const uniqueVersions = [...new Set(props.jdks.map((j) => j.majorVersion))];
@@ -121,6 +122,16 @@ export function ContextMenu(props: {
                 })}
               </SubMenu>
             </>
+          )}
+          {isJs && (
+            <MenuItem
+              icon="Globe"
+              label="Alterar porta"
+              onClick={async () => {
+                props.onSetPort(s.name, props.port ?? s.env?.PORT);
+                props.onClose();
+              }}
+            />
           )}
 
           {props.containers.length > 0 && (

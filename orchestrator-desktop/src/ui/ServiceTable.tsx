@@ -5,6 +5,7 @@ import type { ContainerDto, JdkInfo, ProjectType, ServiceDto } from "../api/type
 import { ContextMenu } from "./ContextMenu";
 import { Icon } from "./Icons";
 import { Modal } from "./Modal";
+import { ServicePortModal } from "./ServicePortModal";
 import type { ToastType } from "./Toast";
 import { Tooltip } from "./Tooltip";
 import { useDragReorder } from "./useDragReorder";
@@ -46,6 +47,7 @@ export function ServiceTable(props: {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [rmContTarget, setRmContTarget] = useState<{ svc: string; cid: string; cname: string } | null>(null);
+  const [portTarget, setPortTarget] = useState<{ name: string; port?: string } | null>(null);
 
   const allSvcs = props.allServices ?? props.services;
   const handleReorder = useCallback(
@@ -177,6 +179,10 @@ export function ServiceTable(props: {
               props.onToast?.("error", String(e));
             }
           }}
+          onSetPort={(name, port) => {
+            setMenuOpen(null);
+            setPortTarget({ name, port });
+          }}
           onStart={async () => {
             setBusy(s.name);
             try {
@@ -231,6 +237,23 @@ export function ServiceTable(props: {
         onConfirm={() => void confirmRmCont()}
         onCancel={() => setRmContTarget(null)}
       />
+      <ServicePortModal
+        open={!!portTarget}
+        serviceName={portTarget?.name ?? null}
+        currentPort={portTarget?.port}
+        onCancel={() => setPortTarget(null)}
+        onConfirm={async (name, port) => {
+          try {
+            const u = await api.setServicePort(name, port);
+            props.onServicesUpdate?.(u);
+            props.onToast?.("success", `Porta ${port} → ${name}`);
+          } catch (e) {
+            props.onToast?.("error", String(e));
+          } finally {
+            setPortTarget(null);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -252,6 +275,7 @@ function ServiceRow(props: {
   onRemove: (s: string, c: string) => void;
   onSetJava: (name: string, ver: string | null) => Promise<void>;
   onSetScript: (name: string, script: string) => Promise<void>;
+  onSetPort: (name: string, currentPort?: string) => void;
   onStart: () => Promise<void>;
   onStop: () => Promise<void>;
   onRestart: () => Promise<void>;
@@ -328,6 +352,7 @@ function ServiceRow(props: {
                 onDelete={props.onDelete}
                 onSetJava={props.onSetJava}
                 onSetScript={props.onSetScript}
+                onSetPort={props.onSetPort}
               />
             )}
           </div>

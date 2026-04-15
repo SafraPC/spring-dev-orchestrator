@@ -1,7 +1,7 @@
 package dev.safra.orchestrator.core.runtime;
 
 import java.io.RandomAccessFile;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 public class LogSubscription {
+  private static final Charset LOG_CHARSET = Charset.defaultCharset();
   private final String subId;
   private final String service;
   private final Path file;
@@ -66,7 +67,7 @@ public class LogSubscription {
         }
         if (waitAttempts % 40 == 0) {
           onLine
-              .accept("[logTail] ⏳ Aguardando criação do arquivo de log... (" + (waitAttempts * pollMs / 1000) + "s)");
+              .accept("[logTail] [WAIT] Aguardando criação do arquivo de log... (" + (waitAttempts * pollMs / 1000) + "s)");
         }
       } catch (InterruptedException ignored) {
         return;
@@ -74,11 +75,11 @@ public class LogSubscription {
     }
 
     if (!Files.exists(file)) {
-      onLine.accept("[logTail] ⚠️ Arquivo de log não encontrado após " + (waitAttempts * pollMs / 1000) + " segundos: "
+      onLine.accept("[logTail] [WARN] Arquivo de log não encontrado após " + (waitAttempts * pollMs / 1000) + " segundos: "
           + file.getFileName());
       onLine.accept("[logTail] O processo pode ter falhado ao iniciar. Verifique os logs de erro.");
     } else {
-      onLine.accept("[logTail] ✓ Arquivo de log encontrado, iniciando leitura...");
+      onLine.accept("[logTail] [OK] Arquivo de log encontrado, iniciando leitura...");
     }
 
     AtomicLong pos = new AtomicLong(0);
@@ -126,12 +127,12 @@ public class LogSubscription {
         pos.set(0);
         carry.set("");
         if (running.get() && !shutdown.get()) {
-          onLine.accept("[logTail] ⚠️ Erro de leitura: " + e.getMessage() + " - Tentando novamente...");
+          onLine.accept("[logTail] [WARN] Erro de leitura: " + e.getMessage() + " - Tentando novamente...");
         }
       } catch (Exception e) {
         e.printStackTrace();
         if (running.get() && !shutdown.get()) {
-          onLine.accept("[logTail] ❌ Erro inesperado: " + e.getMessage());
+          onLine.accept("[logTail] [ERROR] Erro inesperado: " + e.getMessage());
         }
       }
       try {
@@ -161,7 +162,7 @@ public class LogSubscription {
       raf.readFully(bytes);
       pos.set(len);
 
-      String chunk = new String(bytes, StandardCharsets.UTF_8);
+      String chunk = new String(bytes, LOG_CHARSET);
       String combined = carry.get() + chunk;
       String[] split = combined.split("\\R", -1);
 
@@ -202,7 +203,7 @@ public class LogSubscription {
         raf.seek(start);
         byte[] bytes = new byte[(int) (len - start)];
         raf.readFully(bytes);
-        String txt = new String(bytes, StandardCharsets.UTF_8);
+        String txt = new String(bytes, LOG_CHARSET);
         String[] split = txt.split("\\R");
         List<String> out = new ArrayList<>();
         for (String s : split)

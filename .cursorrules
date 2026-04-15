@@ -32,15 +32,18 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 | Main | Entry point, reads stdin, dispatches to CoreRuntime | core |
 | CoreRuntime | Method dispatch, lifecycle | core.runtime |
 | WorkspaceManager | Roots, scan, persistence | core.runtime |
+| WorkspaceDefinitionSync | Após scan: reaplica port/MVN no Spring; preserva java/script por serviço | core.runtime |
+| MavenLaunchCommands | Windows: `./mvnw` → `mvnw.cmd` absoluto | process |
 | ServiceManager | Start/stop/restart, status refresh | core.runtime |
 | ContainerManager | Container CRUD, service linking | core.runtime |
 | LogManager | Log subscriptions, emit lines | core.runtime |
 | ProjectScanner | Walk dirs, find pom.xml, detect Spring Boot | core.runtime |
-| JsProjectScanner | Walk dirs, find package.json, detect Next/Nest/React/Vue | core.runtime |
+| JsProjectScanner | Walk dirs, find package.json; `availableScripts` = todos os nomes em `scripts` | core.runtime |
 | PortExtractor | Read port from application.properties/yml | core.runtime |
 | ExternalToolLauncher | Open folder/terminal/editor | core.runtime |
 | StateStore | JSON read/write to files | core.runtime |
 | ProcessManager | Process start/stop/kill, alive check | process |
+| JavaVersionDetector | JDKs: SDKMAN, Homebrew, Program Files (Windows), macOS JVMs, JAVA_HOME | process |
 
 ### Models
 | Model | Type | Fields |
@@ -86,7 +89,7 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 ## Desktop Module (Tauri + React)
 
 ### Rust (src-tauri/src/)
-- `core_bridge.rs`: CoreBridge spawns Java JAR, stdin/stdout IPC reader thread; dev JAR path via `CARGO_MANIFEST_DIR/../../orchestrator-core/target/...` (não depende do cwd do processo)
+- `core_bridge.rs`: CoreBridge spawns Java JAR, stdin/stdout IPC; `ensure_started_and_send_request` segura o mutex `lifecycle` do início ao fim da requisição para não conflitar com `cleanup` (troca do Java nas Configurações)
 - `java_runtime.rs`: PATH/JAVA_HOME merge, `spawn_core`, stderr log `desktop-logs/core.stderr.log`
 - `java_env.rs`: Java 17+ check (`java -version` parse), `CREATE_NO_WINDOW` on Windows, reject Microsoft Store stub paths (`WindowsApps`)
 - `main.rs`: Tauri commands (`core_request`, settings, folder dialogs)
@@ -107,7 +110,7 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 | ImportSection | ui/ImportSection.tsx | Root path import form |
 
 ### API Client (api/client.ts)
-- All methods go through `core<T>(method, params)` which calls `invoke("core_request")`
+- `core()` serializa chamadas a `invoke("core_request")` numa fila (evita vários IPC em paralelo no Windows)
 - Types in `api/types.ts`: ServiceDto, ContainerDto, WorkspaceDto, StopResultDto
 
 ### Keyboard Shortcuts
@@ -118,9 +121,9 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 
 ## Build
 - `./build.sh` — full build: core JAR → copy to Tauri → frontend build → Tauri build (macOS/Linux/Git Bash)
-- `build.ps1` / `build.cmd` — mesmo fluxo no Windows; `build.cmd` chama `vcvars64.bat` (MSVC) quando existir Build Tools 2022, depois PowerShell com `ExecutionPolicy Bypass`
+- `build.ps1` / `build.cmd` — mesmo fluxo no Windows; `build.cmd` chama `vcvars64.bat` (MSVC) quando existir Build Tools 2022, depois PowerShell com `ExecutionPolicy Bypass`; após mover a pasta do repo, se o Tauri falhar com caminho antigo em `target\`, use `build.cmd -CleanTauriTarget` ou `ORCHESTRATOR_CLEAN_TAURI_TARGET=1`
 - `build.ps1` antepõe `%LOCALAPPDATA%\OrchestratorBuildDeps` (Maven/Node portáteis se existirem), resolve `mvn`/`npm`/`cargo` via PATH, `MAVEN_HOME`, ou caminhos comuns; falha de passo propaga exit code
-- `./start.sh` — dev mode: core JAR → Vite dev → Tauri dev
+- `./start.sh` (macOS/Linux) ou **`start.cmd` / `start.ps1`** (Windows) — `start.ps1` antecede PATH com Maven/Node/Cargo portáteis (`%LOCALAPPDATA%\OrchestratorBuildDeps`, `.cargo\bin`): escolhe a pasta **`apache-maven-*`** e **`node-v*`** com `npm.cmd` mais recente por `LastWriteTime` (fallback 3.9.9 / node-v20.18.3); `run-dev.mjs` espelha a mesma lógica. Dev: **`devUrl`** em `tauri.conf.json` deve ser `http://127.0.0.1:5173` (alinhado ao Vite `--host 127.0.0.1`; `localhost` no Windows costuma falhar). mesmo fluxo que `start.sh`: Maven gera o JAR → Vite em background (`.orchestrator/pids/ui.pid`; `--host 127.0.0.1` alinhado ao check HTTP; Windows sem `detached`/FD em spawn para evitar EINVAL) → `tauri dev` em primeiro plano; ao sair do Tauri mata o Vite. **`ORCHESTRATOR_DEV_STOP_AFTER_VITE=1`** (herdado pelo processo do `node`): para após Vite OK sem subir Tauri (verificação/CI). `orchestrator-desktop`: `npm run dev:full` chama o mesmo script Node (`scripts/run-dev.mjs`). `beforeDevCommand` no Tauri fica vazio (Vite já vem do script)
 - `scripts/install/install.sh` — install automático para macOS/Linux via release latest
 - `scripts/install/install.ps1` — install automático para Windows via release latest
 - Output: `.app`/`.dmg` in `orchestrator-desktop/src-tauri/target/release/bundle/`
@@ -140,9 +143,10 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 - No Spring Boot in core (plain Java + Jackson)
 
 ## Conventions
+- Ao finalizar alterações no repo, **sempre** executar verificação: `mvn -q -DskipTests compile` em `orchestrator-core/`, `cargo check` em `orchestrator-desktop/src-tauri/`, e `npm run build` em `orchestrator-desktop/` quando Node estiver no PATH (corrigir até passar)
 - Container = logical group of services (NOT Docker)
 - Service = Spring Boot project discovered via pom.xml scan
-- All IPC is synchronous request/response except log events (async stream)
+- All IPC is synchronous request/response except log events (async stream); `core_bridge` usa **`session` Mutex** único: `ensure_started` + escrita stdin + `recv` + `cleanup` na mesma exclusão mútua (sem corridas com `set_java_runtime_path` / timeout); timeout de recv **mata** o JVM e limpa `pending`; **uma retentativa** em `CORE_SHUTDOWN` ou erros de transporte. Reader do stdout do core deve usar **`read_until` + `from_utf8_lossy`** (não `lines().flatten()`) para não perder respostas com bytes inválidos. Eventos `core_event`: `async_runtime::spawn` + emit. Core **não** sobe no `.setup` do Tauri. **`start.cmd`** zera `ORCHESTRATOR_SKIP_MVN_CLEAN` antes do PS1 para forçar rebuild; **`run-dev.mjs`**: Maven default **`clean package`** (skip clean só com `ORCHESTRATOR_SKIP_MVN_CLEAN=1`). Smoke: `npm run verify:core-ipc`
 - State persisted as JSON files, no database
 - Max 300 lines per file
 - No comments in code

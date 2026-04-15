@@ -1,3 +1,7 @@
+param(
+  [switch]$CleanTauriTarget
+)
+
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $CoreDir = Join-Path $Root "orchestrator-core"
@@ -142,6 +146,19 @@ Copy-Item -Path $JarPath -Destination $JarDest -Force
 Write-Host "[build] OK copiado para: $JarDest"
 
 Write-Host "[build] 3. Buildando frontend + desktop (Tauri)..."
+$TauriDir = Join-Path $DesktopDir "src-tauri"
+if ($CleanTauriTarget -or $env:ORCHESTRATOR_CLEAN_TAURI_TARGET -eq "1") {
+  Write-Host "[build] Limpando target Rust em src-tauri (param -CleanTauriTarget ou env ORCHESTRATOR_CLEAN_TAURI_TARGET=1)..."
+  Push-Location $TauriDir
+  try {
+    & $Cargo clean
+    if ($LASTEXITCODE -ne 0) {
+      exit $LASTEXITCODE
+    }
+  } finally {
+    Pop-Location
+  }
+}
 Push-Location $DesktopDir
 try {
   if (-not (Test-Path "node_modules")) {

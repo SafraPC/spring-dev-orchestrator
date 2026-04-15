@@ -12,6 +12,7 @@ import java.util.function.BiConsumer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.safra.orchestrator.model.ProjectType;
 import dev.safra.orchestrator.model.ServiceDefinition;
 import dev.safra.orchestrator.model.ServiceDescriptor;
 import dev.safra.orchestrator.process.JavaVersionDetector;
@@ -173,12 +174,29 @@ public class CoreRuntime {
         String script = params != null && params.hasNonNull("script") ? params.get("script").asText() : null;
         ServiceDescriptor sd = serviceManager.requireService(name);
         ServiceDefinition def = sd.getDefinition();
-        if (script != null && def.getAvailableScripts() != null && def.getAvailableScripts().contains(script)) {
-          def.setSelectedScript(script);
-          def.setCommand(List.of("npm", "run", script));
+        if (def.getAvailableScripts() != null && !def.getAvailableScripts().isEmpty()) {
+          String selected = WorkspaceDefinitionSync.selectRuntimeJsScript(script, def.getAvailableScripts());
+          if (selected != null) {
+            def.setSelectedScript(selected);
+            def.setCommand(List.of("npm", "run", selected));
+          }
         }
         workspaceManager.persistWorkspace();
         emitEvent.accept("service", om.valueToTree(serviceManager.toView(sd)));
+        yield serviceManager.list();
+      }
+      case "setServicePort" -> {
+        String name = reqName(params);
+        int port = params != null && params.has("port") ? params.get("port").asInt(-1) : -1;
+        if (port < 1 || port > 65535) throw new IllegalArgumentException("params.port inválida");
+        ServiceDescriptor sd = serviceManager.requireService(name);
+        ServiceDefinition def = sd.getDefinition();
+        if (def.getProjectType() == null || def.getProjectType() == ProjectType.SPRING_BOOT) {
+          throw new IllegalArgumentException("Troca de porta suportada apenas para projetos frontend");
+        }
+        WorkspaceDefinitionSync.applyJsPort(def, port);
+        workspaceManager.persistWorkspace();
+        serviceManager.restart(name);
         yield serviceManager.list();
       }
       case "setServiceJavaVersion" -> {

@@ -8,7 +8,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
 
@@ -78,19 +77,8 @@ public class WorkspaceManager {
     for (ServiceDefinition def : workspace.getServices()) {
       if (def.getName() == null || def.getName().isBlank())
         continue;
-      Path servicePath = Path.of(def.getPath());
-      boolean isSpring = def.getProjectType() == null || def.getProjectType() == ProjectType.SPRING_BOOT;
-      if (Files.exists(servicePath) && isSpring) {
-        applyPortFromConfig(def, servicePath);
-        if (def.getJavaVersion() == null || def.getJavaVersion().isBlank()) {
-          Path pom = servicePath.resolve("pom.xml");
-          if (Files.exists(pom)) {
-            def.setJavaVersion(scanner.extractJavaVersion(pom));
-          }
-        }
-        if (def.getProjectType() == null)
-          def.setProjectType(ProjectType.SPRING_BOOT);
-      }
+      if (def.getProjectType() == null)
+        def.setProjectType(ProjectType.SPRING_BOOT);
 
       if (def.getContainerIds() == null)
         def.setContainerIds(new ArrayList<>());
@@ -178,10 +166,12 @@ public class WorkspaceManager {
 
   public JsonNode scanRoots() {
     Map<String, List<String>> savedContainerIds = new HashMap<>();
+    Map<String, ServiceDefinition> previousByName = new HashMap<>();
     for (ServiceDefinition def : workspace.getServices()) {
       if (def.getContainerIds() != null && !def.getContainerIds().isEmpty()) {
         savedContainerIds.put(def.getName(), new ArrayList<>(def.getContainerIds()));
       }
+      previousByName.put(def.getName(), def);
     }
 
     List<ServiceDefinition> found = new ArrayList<>();
@@ -203,6 +193,8 @@ public class WorkspaceManager {
         def.setContainerIds(new ArrayList<>(valid));
       }
     }
+
+    WorkspaceDefinitionSync.mergeScannedWithPrevious(byName, previousByName);
 
     workspace.setServices(new ArrayList<>(byName.values()));
     syncServiceOrder();
@@ -281,24 +273,4 @@ public class WorkspaceManager {
     store.writeJson(runtimeFile, m);
   }
 
-  private void applyPortFromConfig(ServiceDefinition def, Path servicePath) {
-    Optional<Integer> configPort = portExtractor.extract(servicePath);
-    if (configPort.isEmpty())
-      return;
-    int port = configPort.get();
-    if (def.getEnv() == null)
-      def.setEnv(new HashMap<>());
-    def.getEnv().put("SERVER_PORT", String.valueOf(port));
-    List<String> cmd = new ArrayList<>(def.getCommand());
-    for (int i = 0; i < cmd.size(); i++) {
-      if (cmd.get(i).startsWith("-Dspring-boot.run.arguments=--server.port=")) {
-        cmd.set(i, "-Dspring-boot.run.arguments=--server.port=" + port);
-        def.setCommand(cmd);
-        return;
-      }
-    }
-    String mvnCmd = Files.exists(servicePath.resolve("mvnw")) ? "./mvnw" : "mvn";
-    def.setCommand(
-        List.of(mvnCmd, "-q", "-DskipTests", "-Dspring-boot.run.arguments=--server.port=" + port, "spring-boot:run"));
-  }
 }

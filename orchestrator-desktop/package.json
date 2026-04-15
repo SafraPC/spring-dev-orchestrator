@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
+    "dev:full": "node ./scripts/run-dev.mjs",
+    "verify:core-ipc": "node ./scripts/smoke-core-ipc.mjs",
     "tauri:build": "tauri build"
   },
   "dependencies": {

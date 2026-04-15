@@ -14,8 +14,7 @@ async fn core_request(app: tauri::AppHandle, bridge: State<'_, CoreBridge>, meth
   let bridge = bridge.inner().clone();
   let app_handle = app.clone();
   let resp: Value = tauri::async_runtime::spawn_blocking(move || {
-    bridge.ensure_started(&app_handle)?;
-    bridge.send_request(&method, params)
+    bridge.ensure_started_and_send_request(&app_handle, &method, params)
   })
   .await
   .map_err(|e| format!("Task falhou: {e}"))??;
@@ -44,16 +43,23 @@ fn get_runtime_settings(app: tauri::AppHandle) -> RuntimeSettings {
 
 #[tauri::command]
 fn set_java_runtime_path(app: tauri::AppHandle, bridge: State<'_, CoreBridge>, java_path: Option<String>) -> Result<RuntimeSettings, String> {
+  let current = read_runtime_settings(&app);
   let java_path = java_path.and_then(|value| {
     let trimmed = value.trim().to_string();
     if trimmed.is_empty() { None } else { Some(trimmed) }
   });
+  if current.java_path == java_path {
+    return Ok(current);
+  }
   if let Some(value) = java_path.as_deref() {
     validate_java_runtime_path(value)?;
   }
   let settings = RuntimeSettings { java_path };
   write_runtime_settings(&app, &settings)?;
-  bridge.cleanup();
+  let bridge = bridge.inner().clone();
+  let _ = tauri::async_runtime::spawn_blocking(move || {
+    bridge.cleanup();
+  });
   Ok(settings)
 }
 
@@ -117,12 +123,7 @@ fn main() {
       select_java_folder,
       select_java_file
     ])
-    .setup(|app| {
-      let app_handle = app.handle().clone();
-      let b = app.state::<CoreBridge>();
-      let _ = b.ensure_started(&app_handle);
-      Ok(())
-    })
+    .setup(|_app| Ok(()))
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app, event| {

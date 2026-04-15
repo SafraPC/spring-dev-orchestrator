@@ -54,7 +54,8 @@ public class ProjectScanner {
             return FileVisitResult.CONTINUE;
 
           Path mvnw = dir.resolve("mvnw");
-          boolean hasMvnw = Files.exists(mvnw);
+          boolean hasMvnw = Files.exists(mvnw) || Files.exists(dir.resolve("mvnw.cmd"))
+              || Files.exists(dir.resolve("mvnw.bat"));
           if (!isSpringBootPom(file) && !hasMvnw)
             return FileVisitResult.CONTINUE;
 

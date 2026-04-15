@@ -44,6 +44,7 @@ export function App() {
   const [svcW, setSvcW] = useState(288);
   const { toasts, addToast, removeToast } = useToast();
   const { settings, setSettings } = useSettings();
+  const workspaceRefreshT = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [loading, setLoading] = useState(true);
   const selectedService = useMemo(() => services.find((s) => s.name === selected) ?? null, [services, selected]);
@@ -61,8 +62,18 @@ export function App() {
   }, []);
 
   const refreshData = useCallback(async () => {
+    const BOOTSTRAP_MS = 90_000;
     try {
-      const [list, ctrs] = await Promise.all([api.listServices(), api.listContainers()]);
+      const packed = await Promise.race([
+        Promise.all([api.listServices(), api.listContainers()]),
+        new Promise<never>((_, rej) => {
+          setTimeout(
+            () => rej(new Error(`Timeout de ${BOOTSTRAP_MS / 1000}s ao falar com o core.`)),
+            BOOTSTRAP_MS,
+          );
+        }),
+      ]);
+      const [list, ctrs] = packed as [ServiceDto[], ContainerDto[]];
       setServices(list);
       setContainers(ctrs);
       setSelected((prev) => (prev && !list.some((s) => s.name === prev) ? null : prev));
@@ -90,6 +101,15 @@ export function App() {
   }, [refresh]);
 
   useEffect(() => {
+    if (!loading) return;
+    const t = setTimeout(() => {
+      setLoading(false);
+      addToast("error", "Core demorou para responder. Abra Configurações e verifique Java.");
+    }, 95_000);
+    return () => clearTimeout(t);
+  }, [loading, addToast]);
+
+  useEffect(() => {
     void refreshJdks();
   }, [refreshJdks]);
 
@@ -99,20 +119,33 @@ export function App() {
 
   useEffect(() => {
     let cancel = false;
+    const scheduleWorkspaceRefresh = () => {
+      if (workspaceRefreshT.current) clearTimeout(workspaceRefreshT.current);
+      workspaceRefreshT.current = setTimeout(() => {
+        workspaceRefreshT.current = null;
+        if (!cancel) void refresh();
+      }, 400);
+    };
     const promise = listen<CoreEvent>("core_event", (e) => {
       if (cancel) return;
-      const { event, payload } = e.payload;
-      if (event === "service") {
+      const raw = e.payload as Record<string, unknown> | null;
+      if (!raw || typeof raw !== "object") return;
+      const ev = raw.event;
+      const payload = raw.payload;
+      if (ev === "service" && payload) {
         const svc = payload as ServiceDto;
         setServices((prev) => prev.map((s) => (s.name === svc.name ? svc : s)));
-      } else if (event === "services") {
+      } else if (ev === "services" && payload) {
         setServices(payload as ServiceDto[]);
-      } else if (event === "workspace") {
-        void refresh();
+      } else if (ev === "log") {
+        return;
+      } else if (ev === "workspace") {
+        scheduleWorkspaceRefresh();
       }
     });
     return () => {
       cancel = true;
+      if (workspaceRefreshT.current) clearTimeout(workspaceRefreshT.current);
       void promise.then((u) => u());
     };
   }, [refresh]);

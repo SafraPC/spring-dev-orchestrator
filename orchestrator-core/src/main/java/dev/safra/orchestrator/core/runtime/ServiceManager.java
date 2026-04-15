@@ -15,11 +15,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import dev.safra.orchestrator.model.ServiceDefinition;
 import dev.safra.orchestrator.model.ServiceDescriptor;
+import dev.safra.orchestrator.model.ProjectType;
 import dev.safra.orchestrator.model.ServiceRuntime;
 import dev.safra.orchestrator.model.ServiceStatus;
 import dev.safra.orchestrator.process.ProcessManager;
 import dev.safra.orchestrator.process.StopResult;
-
 public class ServiceManager {
   private final ObjectMapper om;
   private final ProcessManager processManager;
@@ -44,14 +44,20 @@ public class ServiceManager {
   }
 
   public JsonNode list() {
-    refreshStatuses();
-    persistRuntime.run();
     return om.valueToTree(sortedViews(services.values().stream().map(this::toView).toList()));
   }
 
   public JsonNode start(String name) {
     ServiceDescriptor sd = requireService(name);
     ServiceRuntime rt = sd.getRuntime();
+    ServiceDefinition def = sd.getDefinition();
+    if (def.getProjectType() != null && def.getProjectType() != ProjectType.SPRING_BOOT
+        && def.getAvailableScripts() != null && !def.getAvailableScripts().isEmpty()) {
+      String selected = WorkspaceDefinitionSync.selectRuntimeJsScript(def.getSelectedScript(), def.getAvailableScripts());
+      if (selected != null && (def.getSelectedScript() == null || !def.getSelectedScript().equals(selected) || def.getCommand() == null || def.getCommand().isEmpty())) {
+        def.setSelectedScript(selected); def.setCommand(List.of("npm", "run", selected)); persistWorkspace.run();
+      }
+    }
 
     if (rt.getPid() != null) {
       if (processManager.isAlive(rt.getPid())) {
@@ -61,7 +67,7 @@ public class ServiceManager {
       rt.setStatus(ServiceStatus.STOPPED);
     }
 
-    logManager.emitLogStatus(name, "Iniciando serviço " + name + "...");
+    logManager.emitLogStatus(name, "Iniciando servico " + name + "...");
 
     try {
       long pid = processManager.start(sd.getDefinition());
@@ -84,7 +90,7 @@ public class ServiceManager {
       logManager.emitLogStatus(name, "Erro ao iniciar: " + e.getMessage());
       persistRuntime.run();
       emitServiceChanged(name);
-      throw new IllegalStateException("Falha ao iniciar serviço: " + name + " - " + e.getMessage(), e);
+      throw new IllegalStateException("Falha ao iniciar servico: " + name + " - " + e.getMessage(), e);
     }
   }
 
@@ -113,7 +119,6 @@ public class ServiceManager {
     stop(name);
     return start(name);
   }
-
   public JsonNode startAll() {
     List<ServiceView> out = new ArrayList<>();
     for (ServiceDescriptor sd : new ArrayList<>(services.values())) {
@@ -205,7 +210,6 @@ public class ServiceManager {
         .map(this::toView)
         .toList()));
   }
-
   public ServiceDescriptor requireService(String name) {
     ServiceDescriptor sd = services.get(name);
     if (sd == null)

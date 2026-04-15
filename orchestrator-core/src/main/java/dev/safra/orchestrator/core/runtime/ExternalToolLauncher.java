@@ -1,6 +1,9 @@
 package dev.safra.orchestrator.core.runtime;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ExternalToolLauncher {
 
@@ -87,8 +90,11 @@ public class ExternalToolLauncher {
   }
 
   private ProcessBuilder findEditor(String os, Path path) throws Exception {
+    if (os.contains("win")) {
+      return findWindowsEditor(path);
+    }
     String[] editors = { "cursor", "code" };
-    String whichCmd = os.contains("win") ? "where" : "which";
+    String whichCmd = "which";
 
     for (String editor : editors) {
       try {
@@ -105,5 +111,38 @@ public class ExternalToolLauncher {
     }
 
     throw new IllegalStateException("Nenhum editor encontrado. Instale Cursor ou VSCode e adicione ao PATH");
+  }
+
+  private ProcessBuilder findWindowsEditor(Path path) throws Exception {
+    String[] aliases = { "cursor", "code", "code-insiders" };
+    for (String alias : aliases) {
+      try {
+        Process test = new ProcessBuilder("where", alias).start();
+        if (test.waitFor() == 0) {
+          return new ProcessBuilder("cmd", "/c", "start", "", alias, path.toString());
+        }
+      } catch (Exception ignored) {
+      }
+    }
+    String local = System.getenv("LOCALAPPDATA");
+    String user = System.getenv("USERPROFILE");
+    List<Path> candidates = new ArrayList<>();
+    if (local != null && !local.isBlank()) {
+      candidates.add(Path.of(local, "Programs", "Cursor", "Cursor.exe"));
+      candidates.add(Path.of(local, "Programs", "cursor", "Cursor.exe"));
+      candidates.add(Path.of(local, "Programs", "Microsoft VS Code", "Code.exe"));
+      candidates.add(Path.of(local, "Programs", "Microsoft VS Code Insiders", "Code - Insiders.exe"));
+    }
+    if (user != null && !user.isBlank()) {
+      candidates.add(Path.of(user, "AppData", "Local", "Programs", "Cursor", "Cursor.exe"));
+      candidates.add(Path.of(user, "AppData", "Local", "Programs", "Microsoft VS Code", "Code.exe"));
+      candidates.add(Path.of(user, "AppData", "Local", "Programs", "Microsoft VS Code Insiders", "Code - Insiders.exe"));
+    }
+    for (Path exe : candidates) {
+      if (Files.exists(exe)) {
+        return new ProcessBuilder(exe.toString(), path.toString());
+      }
+    }
+    throw new IllegalStateException("Nenhum editor encontrado. Instale Cursor ou VSCode");
   }
 }

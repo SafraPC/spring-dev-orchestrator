@@ -113,8 +113,12 @@ export function MonitorPanel(props: {
         const ev = e.payload as Record<string, unknown>;
         if (!ev || ev.event !== "log") return;
         const p = ev.payload as Record<string, unknown> | undefined;
-        if (!p || !p.subId) return;
-        const svc = subIdToService.get(String(p.subId));
+        if (!p) return;
+        const sid = String(p.subId ?? "");
+        const fromMap = sid ? subIdToService.get(sid) : undefined;
+        const svcName = String(p.service ?? "");
+        const svc =
+          fromMap ?? (svcName && serviceNames.includes(svcName) ? svcName : undefined);
         if (!svc) return;
         const msg = String(p.line ?? "");
         if (msg) {
@@ -124,7 +128,6 @@ export function MonitorPanel(props: {
           });
         }
       });
-
       for (const name of serviceNames) {
         try {
           const sub = await api.subscribeLogs(name, 50);

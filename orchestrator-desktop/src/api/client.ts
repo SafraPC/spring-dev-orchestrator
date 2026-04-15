@@ -1,13 +1,41 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ContainerDto, JdkInfo, RuntimeSettingsDto, ServiceDto, StopResultDto, WorkspaceDto } from "./types";
 
+type CoreJob<T> = () => Promise<T>;
+
+let coreRequestTail: Promise<unknown> = Promise.resolve();
+const CORE_REQUEST_TIMEOUT_MS = 45_000;
+
+function enqueueCoreRequest<T>(job: CoreJob<T>): Promise<T> {
+  const run = coreRequestTail.then(() => job());
+  coreRequestTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
 async function core<T>(method: string, params: unknown = {}): Promise<T> {
-  try {
-    return await invoke<T>("core_request", { method, params });
-  } catch (error) {
-    if (error instanceof Error) throw error;
-    throw new Error(typeof error === "string" ? error : `Falha no core: ${String(error)}`);
-  }
+  return enqueueCoreRequest(async () => {
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    try {
+      const result = await Promise.race([
+        invoke<T>("core_request", { method, params }),
+        new Promise<T>((_, reject) => {
+          timeoutHandle = setTimeout(
+            () => reject(new Error(`Timeout de ${CORE_REQUEST_TIMEOUT_MS / 1000}s aguardando resposta do core (${method}).`)),
+            CORE_REQUEST_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      return result;
+    } catch (error) {
+      if (error instanceof Error) throw error;
+      throw new Error(typeof error === "string" ? error : `Falha no core: ${String(error)}`);
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+  });
 }
 
 export const api = {
@@ -47,6 +75,7 @@ export const api = {
   listJdks: () => core<JdkInfo[]>("listJdks"),
   setServiceJavaVersion: (name: string, javaVersion: string | null) => core<ServiceDto[]>("setServiceJavaVersion", { name, javaVersion }),
   setServiceScript: (name: string, script: string) => core<ServiceDto[]>("setServiceScript", { name, script }),
+  setServicePort: (name: string, port: number) => core<ServiceDto[]>("setServicePort", { name, port }),
 
   reorderServices: (order: string[]) => core<void>("reorderServices", { order }),
   reorderContainers: (order: string[]) => core<void>("reorderContainers", { order }),

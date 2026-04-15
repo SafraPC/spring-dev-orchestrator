@@ -145,6 +145,8 @@ function ServiceLogView(props: {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const svcName = props.service?.name ?? null;
+  const subIdRef = useRef<string | null>(null);
+  const pendingLogLines = useRef<string[]>([]);
 
   useEffect(() => {
     setLines([]);
@@ -156,40 +158,62 @@ function ServiceLogView(props: {
     if (!svcName) return;
     let unlisten: null | (() => void) = null;
     let alive = true;
-    let subId: string | null = null;
+    let unsubId: string | null = null;
+    subIdRef.current = null;
+    pendingLogLines.current = [];
     (async () => {
-      unlisten = await listen<CoreEvent>("core_event", (e) => {
-        if (!alive) return;
-        const ev = e.payload as Record<string, unknown>;
-        if (!ev || ev.event !== "log") return;
-        const p = ev.payload as Record<string, unknown> | undefined;
-        if (!p || !subId || p.subId !== subId) return;
-        const msg = String(p.line ?? "");
-        if (msg) {
+      try {
+        unlisten = await listen<CoreEvent>("core_event", (e) => {
+          if (!alive) return;
+          const ev = e.payload as Record<string, unknown>;
+          if (!ev || ev.event !== "log") return;
+          const p = ev.payload as Record<string, unknown> | undefined;
+          if (!p) return;
+          if (String(p.service ?? "") !== svcName) return;
+          const sid = String(p.subId ?? "");
+          const bound = subIdRef.current;
+          if (bound !== null && sid !== bound) return;
+          const msg = String(p.line ?? "");
+          if (!msg) return;
+          if (bound === null) {
+            pendingLogLines.current.push(msg);
+            return;
+          }
           setHasLogs(true);
           setLines((prev) => {
             const n = [...prev, msg];
             return n.length > 2000 ? n.slice(-2000) : n;
           });
-        }
-      });
-      try {
-        const sub = await api.subscribeLogs(svcName, 200);
+        });
+        const sub = await Promise.race([
+          api.subscribeLogs(svcName, 200),
+          new Promise<{ subId: string }>((_, rej) => {
+            setTimeout(() => rej(new Error("Timeout ao conectar aos logs (core não respondeu).")), 45000);
+          }),
+        ]);
         if (!alive) {
           await api.unsubscribeLogs(sub.subId).catch(() => {});
           return;
         }
-        subId = sub.subId;
+        unsubId = sub.subId;
+        subIdRef.current = sub.subId;
+        const buffered = pendingLogLines.current;
+        pendingLogLines.current = [];
+        if (buffered.length > 0) {
+          setHasLogs(true);
+          setLines(buffered.length > 2000 ? buffered.slice(-2000) : buffered);
+        }
         setConnected(true);
       } catch (err) {
         setLines([`Erro: ${err instanceof Error ? err.message : String(err)}`]);
+        setConnected(true);
       }
     })().catch((err) => setLines([`Erro: ${err instanceof Error ? err.message : String(err)}`]));
     return () => {
       alive = false;
       setConnected(false);
       if (unlisten) unlisten();
-      if (subId) void api.unsubscribeLogs(subId).catch(() => {});
+      if (unsubId) void api.unsubscribeLogs(unsubId).catch(() => {});
     };
   }, [svcName]);
 

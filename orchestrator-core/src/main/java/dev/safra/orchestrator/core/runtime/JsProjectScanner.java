@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -22,8 +23,6 @@ import dev.safra.orchestrator.model.ServiceDefinition;
 
 public class JsProjectScanner {
 
-  private static final Set<String> RELEVANT_SCRIPTS = Set.of(
-      "dev", "start", "start:dev", "start:debug", "serve", "preview", "build");
   private static final Set<String> SKIP_DIRS = Set.of(
       ".git", "target", "node_modules", ".idea", ".next", "dist", "build", ".turbo", ".cache");
   private static final Pattern PORT_FLAG = Pattern.compile("(?:--port|--PORT|-p)\\s+(\\d+)");
@@ -102,7 +101,12 @@ public class JsProjectScanner {
       def.setContainerIds(new ArrayList<>());
       def.setProjectType(type);
       def.setAvailableScripts(scripts);
-      def.setCommand(List.of("npm", "run", defaultScript));
+      boolean isViteScript = isViteScript(root, defaultScript);
+      if (isViteScript) {
+        def.setCommand(List.of("npm", "run", defaultScript, "--", "--port", String.valueOf(port), "--strictPort"));
+      } else {
+        def.setCommand(List.of("npm", "run", defaultScript));
+      }
 
       Map<String, String> env = new HashMap<>();
       env.put("SERVER_PORT", String.valueOf(port));
@@ -142,9 +146,8 @@ public class JsProjectScanner {
     JsonNode scripts = root.path("scripts");
     if (scripts.isMissingNode() || !scripts.isObject()) return List.of();
     List<String> out = new ArrayList<>();
-    scripts.fieldNames().forEachRemaining(name -> {
-      if (RELEVANT_SCRIPTS.contains(name)) out.add(name);
-    });
+    scripts.fieldNames().forEachRemaining(out::add);
+    Collections.sort(out, String.CASE_INSENSITIVE_ORDER);
     return out;
   }
 
@@ -170,10 +173,18 @@ public class JsProjectScanner {
         }
       } catch (Exception ignored) {}
     }
+    if (hasDep(root.path("dependencies"), "vite") || hasDep(root.path("devDependencies"), "vite")) return 5173;
     return switch (type) {
       case VUE -> 5173;
       default -> 3000;
     };
+  }
+
+  private boolean isViteScript(JsonNode root, String scriptName) {
+    JsonNode scripts = root.path("scripts");
+    if (!scripts.isObject() || !scripts.has(scriptName)) return false;
+    String cmd = scripts.get(scriptName).asText("").toLowerCase();
+    return cmd.contains("vite");
   }
 
   private String pickDefaultScript(List<String> scripts, ProjectType type) {

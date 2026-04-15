@@ -1,6 +1,8 @@
 package dev.safra.orchestrator.core;
 
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -11,9 +13,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.safra.orchestrator.core.ipc.IpcEvent;
 import dev.safra.orchestrator.core.ipc.IpcRequest;
 import dev.safra.orchestrator.core.ipc.IpcResponse;
+import dev.safra.orchestrator.core.runtime.LogFileWriter;
 import dev.safra.orchestrator.core.runtime.CoreRuntime;
 
 public class Main {
+  private static final BufferedWriter OUT = new BufferedWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8));
+
   public static void main(String[] args) throws Exception {
     Map<String, String> a = Args.parse(args);
     var stateDir = Args.stateDir(a);
@@ -39,6 +44,7 @@ public class Main {
 
         IpcResponse resp;
         try {
+          LogFileWriter.log("IPC request recebido: id=" + req.id() + " method=" + req.method());
           JsonNode result = runtime.handle(req.method(), req.params());
           resp = IpcResponse.ok(req.id(), result);
         } catch (IllegalArgumentException e) {
@@ -47,6 +53,7 @@ public class Main {
           resp = IpcResponse.err(req.id(), "INTERNAL_ERROR", e.getMessage() == null ? e.toString() : e.getMessage());
         }
 
+        LogFileWriter.log("IPC response enviada: id=" + req.id() + " ok=" + resp.ok());
         writeLine(om.writeValueAsString(resp));
       }
     } finally {
@@ -63,7 +70,11 @@ public class Main {
   }
 
   private static synchronized void writeLine(String s) {
-    System.out.println(s);
-    System.out.flush();
+    try {
+      OUT.write(s);
+      OUT.newLine();
+      OUT.flush();
+    } catch (Exception ignored) {
+    }
   }
 }

@@ -1,16 +1,15 @@
 package dev.safra.orchestrator.process;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
-
 import dev.safra.orchestrator.model.ProjectType;
 import dev.safra.orchestrator.model.ServiceDefinition;
 
@@ -42,17 +41,24 @@ public class ProcessManager {
       List<String> cmd = new ArrayList<>(def.getCommand());
       boolean isJava = def.getProjectType() == null || def.getProjectType() == ProjectType.SPRING_BOOT;
 
-      if (!cmd.isEmpty() && "./mvnw".equals(cmd.get(0))) {
+      if (isJava) {
+        cmd = MavenLaunchCommands.normalizeWindowsMvnw(cmd, workDir);
+        cmd = MavenLaunchCommands.wrapWindowsMvn(cmd);
+      }
+
+      if (!cmd.isEmpty() && workDir.resolve("mvnw").toFile().exists()) {
         try {
-          File mvnw = workDir.resolve("mvnw").toFile();
-          if (mvnw.exists()) {
-            mvnw.setExecutable(true);
-          }
+          workDir.resolve("mvnw").toFile().setExecutable(true);
         } catch (Exception ignored) {
         }
       }
 
       if (!isJava) {
+        if (def.getEnv() != null && cmd.size() >= 3 && "npm".equalsIgnoreCase(cmd.get(0)) && "run".equalsIgnoreCase(cmd.get(1))
+            && !cmd.contains("--port")) {
+          String jsPort = def.getEnv().getOrDefault("PORT", def.getEnv().get("SERVER_PORT"));
+          if (jsPort != null && !jsPort.isBlank()) { cmd = new ArrayList<>(cmd); cmd.add("--"); cmd.add("--port"); cmd.add(jsPort.trim()); cmd.add("--strictPort"); }
+        }
         String joined = String.join(" ", cmd);
         if (isWindows()) {
           cmd = List.of("cmd.exe", "/c", joined);
@@ -101,7 +107,8 @@ public class ProcessManager {
 
       return pid;
     } catch (IOException e) {
-      throw new IllegalStateException("Falha ao iniciar processo para serviço: " + def.getName(), e);
+      String detail = e.getMessage() != null ? e.getMessage() : e.toString();
+      throw new IllegalStateException("Falha ao iniciar processo para servico: " + def.getName() + " - " + detail, e);
     }
   }
 
@@ -161,15 +168,52 @@ public class ProcessManager {
   }
 
   private String setupJavaPath(ServiceDefinition def, Map<String, String> env, String path) {
+    env.remove("JAVA_HOME");
     String javaHome = def.getJavaHome();
-    if (javaHome == null || javaHome.isBlank()) javaHome = detectJavaHome(def.getJavaVersion());
+    if (javaHome == null || javaHome.isBlank()) {
+      javaHome = detectJavaHome(def.getJavaVersion());
+    }
     if (javaHome != null && !javaHome.isBlank()) {
       env.put("JAVA_HOME", javaHome);
       path = prependPath(path, Path.of(javaHome, "bin").toString());
     }
+    path = setupMavenPath(env, path);
     String home = System.getProperty("user.home");
     String sdkmanMvn = home + "/.sdkman/candidates/maven/current/bin";
     if (Files.isDirectory(Path.of(sdkmanMvn))) path = prependPath(path, sdkmanMvn);
+    return path;
+  }
+
+  private String setupMavenPath(Map<String, String> env, String path) {
+    String mvnHome = env.get("MAVEN_HOME");
+    if (mvnHome != null && !mvnHome.isBlank()) {
+      Path mvnBin = Path.of(mvnHome, "bin");
+      if (Files.isDirectory(mvnBin)) {
+        path = prependPath(path, mvnBin.toString());
+      }
+    }
+
+    String localAppData = env.getOrDefault("LOCALAPPDATA", System.getenv("LOCALAPPDATA"));
+    if (localAppData == null || localAppData.isBlank()) {
+      return path;
+    }
+    Path depsRoot = Path.of(localAppData, "OrchestratorBuildDeps");
+    if (!Files.isDirectory(depsRoot)) {
+      return path;
+    }
+    try (var dirs = Files.list(depsRoot)) {
+      Optional<Path> latestMaven = dirs
+          .filter(Files::isDirectory)
+          .filter(p -> p.getFileName().toString().startsWith("apache-maven-"))
+          .filter(p -> Files.exists(p.resolve("bin").resolve(isWindows() ? "mvn.cmd" : "mvn")))
+          .max(Comparator.comparingLong(p -> p.toFile().lastModified()));
+      if (latestMaven.isPresent()) {
+        Path home = latestMaven.get();
+        env.putIfAbsent("MAVEN_HOME", home.toString());
+        path = prependPath(path, home.resolve("bin").toString());
+      }
+    } catch (Exception ignored) {
+    }
     return path;
   }
 
@@ -236,23 +280,7 @@ public class ProcessManager {
   }
 
   private void freePort(ServiceDefinition def) {
-    if (def.getEnv() == null) return;
-    String portStr = def.getEnv().getOrDefault("SERVER_PORT", def.getEnv().get("PORT"));
-    if (portStr == null || portStr.isBlank()) return;
-    try {
-      int port = Integer.parseInt(portStr.trim());
-      Process lsof = new ProcessBuilder("lsof", "-ti", ":" + port)
-          .redirectErrorStream(true).start();
-      String output = new String(lsof.getInputStream().readAllBytes()).trim();
-      lsof.waitFor(5, TimeUnit.SECONDS);
-      if (output.isEmpty()) return;
-      for (String pidLine : output.split("\\R")) {
-        String pid = pidLine.trim();
-        if (!pid.isEmpty()) {
-          new ProcessBuilder("kill", "-9", pid).start().waitFor(3, TimeUnit.SECONDS);
-        }
-      }
-    } catch (Exception ignored) {}
+    PortProcessKiller.freePort(def.getEnv(), isWindows());
   }
 
   private void monitorProcess(long pid, String serviceName) {
