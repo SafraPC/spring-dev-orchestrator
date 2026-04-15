@@ -45,3 +45,7 @@ export type JdkInfo = {
   path: string;
   vendor: string;
 };
+
+export type RuntimeSettingsDto = {
+  javaPath?: string | null;
+};

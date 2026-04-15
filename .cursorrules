@@ -89,6 +89,8 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 - CoreBridge: spawns Java JAR, manages stdin/stdout
 - core_request: Tauri command, sends IPC request, waits for response
 - select_folder: Tauri dialog for multi-folder selection (pipe-separated)
+- get/set runtime settings: persist desktop-only config in `desktop-settings.json`
+- Java startup accepts a custom Java folder or executable from Settings and restarts the core after save
 - Events emitted as "core_event" to UI
 
 ### React Components
@@ -125,6 +127,7 @@ Event:    `{"event":"eventName","payload":{...}}` (emitted as core_event to UI)
 - Released desktop app bundles the core JAR but still launches it with system `java`
 - End-user machine must have Java 17+ available on `PATH`
 - `JAVA_HOME` is the recommended default JDK for Spring Boot services
+- If `java` is not found, the desktop Settings panel can persist a custom Java home or `java.exe` path
 - End users do not need Rust, Maven, or Node.js to open the desktop app itself
 - Node.js and Maven are only needed when imported services depend on them or when developing the repo
 

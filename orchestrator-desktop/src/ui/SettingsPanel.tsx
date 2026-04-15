@@ -71,7 +71,19 @@ export function SettingsPanel(props: {
   onClose: () => void;
   settings: Settings;
   onChange: (s: Settings) => void;
+  javaPath: string;
+  javaError: string | null;
+  savingJavaPath: boolean;
+  onPickJavaFolder: () => Promise<void>;
+  onPickJavaFile: () => Promise<void>;
+  onSaveJavaPath: (value: string | null) => Promise<void>;
 }) {
+  const [javaPathDraft, setJavaPathDraft] = useState(props.javaPath);
+
+  useEffect(() => {
+    if (props.open) setJavaPathDraft(props.javaPath);
+  }, [props.javaPath, props.open]);
+
   if (!props.open) return null;
 
   const { settings, onChange } = props;
@@ -79,7 +91,7 @@ export function SettingsPanel(props: {
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={props.onClose} />
-      <div className="fixed inset-x-0 top-12 mx-auto z-50 w-80 animate-scale-in rounded-xl border border-white/[0.08] bg-surface-2 shadow-elevated">
+      <div className="fixed inset-x-0 top-12 mx-auto z-50 w-[32rem] max-w-[calc(100vw-2rem)] animate-scale-in rounded-xl border border-white/[0.08] bg-surface-2 shadow-elevated">
         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
           <div className="flex items-center gap-2">
             <Icon.Settings className="h-3.5 w-3.5 text-slate-500" />
@@ -129,6 +141,44 @@ export function SettingsPanel(props: {
               <div className="w-8 h-[18px] bg-surface-4 rounded-full peer peer-checked:bg-accent/50 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:after:translate-x-3.5" />
             </label>
           </SettingRow>
+
+          <div className="space-y-2 rounded-lg border border-white/[0.06] bg-surface-1/70 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Icon.Java className="h-4 w-4 text-accent" />
+                <span className="text-xs text-slate-300">Java do aplicativo</span>
+              </div>
+              {props.javaPath ? <span className="text-2xs text-slate-500">Customizado</span> : <span className="text-2xs text-slate-500">Automático</span>}
+            </div>
+            <input
+              className="input w-full px-2 py-1.5 text-xs"
+              placeholder="Pasta do Java ou caminho do java.exe"
+              value={javaPathDraft}
+              onChange={(e) => setJavaPathDraft(e.target.value)}
+            />
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-2xs text-slate-500">Aceita a pasta do Java ou o executável.</span>
+              <div className="flex items-center gap-2">
+                <button className="btn btn-ghost text-2xs px-2 py-1" onClick={() => void props.onPickJavaFolder()}>
+                  Pasta
+                </button>
+                <button className="btn btn-ghost text-2xs px-2 py-1" onClick={() => void props.onPickJavaFile()}>
+                  Arquivo
+                </button>
+                <button className="btn btn-ghost text-2xs px-2 py-1" onClick={() => void props.onSaveJavaPath(null)}>
+                  Limpar
+                </button>
+                <button
+                  className="btn btn-primary text-2xs px-2.5 py-1"
+                  disabled={props.savingJavaPath}
+                  onClick={() => void props.onSaveJavaPath(javaPathDraft.trim() || null)}
+                >
+                  {props.savingJavaPath ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
+            </div>
+            {props.javaError && <div className="rounded-md border border-[#ff7a0026] bg-[#ff7a0014] px-2.5 py-2 text-2xs text-[#ffb06a]">{props.javaError}</div>}
+          </div>
 
           <div className="divider" />
           <div className="text-2xs text-slate-600 space-y-1">

@@ -1,11 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod java_runtime;
+
+use java_runtime::{read_runtime_settings, spawn_core, validate_java_runtime_path, write_runtime_settings, RuntimeSettings};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -17,14 +19,7 @@ struct CoreBridge {
   child: Arc<Mutex<Option<Child>>>,
   stdin: Arc<Mutex<Option<ChildStdin>>>,
   pending: Arc<Mutex<HashMap<String, std::sync::mpsc::Sender<Value>>>>,
-}
-
-fn state_dir(app: &tauri::AppHandle) -> PathBuf {
-  let base = app
-    .path()
-    .app_data_dir()
-    .unwrap_or_else(|_| PathBuf::from(".orchestrator/appdata"));
-  base.join("orchestrator")
+  lifecycle: Arc<Mutex<()>>,
 }
 
 fn core_jar_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -45,69 +40,6 @@ fn core_jar_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
     Ok(jar)
   }
-}
-
-fn shell_path() -> String {
-  let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/unknown".to_string());
-  let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-  let output = Command::new(&shell)
-    .args(["-l", "-c", "echo $PATH"])
-    .output();
-  if let Ok(out) = output {
-    let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if !p.is_empty() {
-      return p;
-    }
-  }
-  let sdkman = format!("{home}/.sdkman/candidates/java/current/bin");
-  let brew_arm = "/opt/homebrew/bin";
-  let brew_x86 = "/usr/local/bin";
-  let fallback = std::env::var("PATH").unwrap_or_default();
-  format!("{sdkman}:{brew_arm}:{brew_x86}:{fallback}")
-}
-
-fn spawn_core(app: &tauri::AppHandle) -> std::io::Result<(Child, ChildStdin, std::process::ChildStdout)> {
-  let state = state_dir(app);
-  fs::create_dir_all(&state)?;
-
-  let jar = core_jar_path(app).map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e))?;
-  let log_dir = state.join("desktop-logs");
-  let _ = fs::create_dir_all(&log_dir);
-
-  let stdout = Stdio::piped();
-  let stdin = Stdio::piped();
-  let stderr_file = fs::File::create(log_dir.join("core.stderr.log"))?;
-
-  let full_path = shell_path();
-  let java_check = Command::new("java")
-    .arg("-version")
-    .env("PATH", &full_path)
-    .stdout(Stdio::null())
-    .stderr(Stdio::null())
-    .status();
-  if java_check.is_err() {
-    return Err(std::io::Error::new(
-      std::io::ErrorKind::NotFound,
-      "Java não encontrado no PATH. Instale Java 17+ para executar o core.",
-    ));
-  }
-
-  let mut child = Command::new("java")
-    .args([
-      "-jar",
-      jar.to_string_lossy().as_ref(),
-      "--stateDir",
-      state.join("core").to_string_lossy().as_ref(),
-    ])
-    .env("PATH", &full_path)
-    .stdin(stdin)
-    .stdout(stdout)
-    .stderr(Stdio::from(stderr_file))
-    .spawn()?;
-
-  let child_stdin = child.stdin.take().expect("stdin piped");
-  let child_stdout = child.stdout.take().expect("stdout piped");
-  Ok((child, child_stdin, child_stdout))
 }
 
 fn start_reader_thread(app: tauri::AppHandle, stdout: std::process::ChildStdout, pending: Arc<Mutex<HashMap<String, std::sync::mpsc::Sender<Value>>>>) {
@@ -135,7 +67,7 @@ fn start_reader_thread(app: tauri::AppHandle, stdout: std::process::ChildStdout,
 }
 
 impl CoreBridge {
-  fn is_alive(&self) -> bool {
+  fn is_alive_inner(&self) -> bool {
     if let Ok(mut guard) = self.child.lock() {
       if let Some(ref mut child) = *guard {
         return child.try_wait().ok().flatten().is_none();
@@ -144,9 +76,17 @@ impl CoreBridge {
     false
   }
 
-  fn cleanup(&self) {
+  fn is_alive(&self) -> bool {
+    let _lifecycle = self.lifecycle.lock().unwrap();
+    self.is_alive_inner()
+  }
+
+  fn cleanup_inner(&self) {
     if let Ok(mut guard) = self.stdin.lock() {
       drop(guard.take());
+    }
+    if let Ok(mut pending) = self.pending.lock() {
+      pending.clear();
     }
     if let Ok(mut guard) = self.child.lock() {
       if let Some(ref mut child) = *guard {
@@ -157,24 +97,30 @@ impl CoreBridge {
     }
   }
 
+  fn cleanup(&self) {
+    let _lifecycle = self.lifecycle.lock().unwrap();
+    self.cleanup_inner();
+  }
+
   fn ensure_started(&self, app: &tauri::AppHandle) -> Result<(), String> {
-    if self.is_alive() {
+    let _lifecycle = self.lifecycle.lock().unwrap();
+    if self.is_alive_inner() {
       return Ok(());
     }
-    self.cleanup();
+    self.cleanup_inner();
 
     let jar_path = core_jar_path(app)?;
     if !jar_path.exists() {
       return Err(format!("JAR não encontrado em: {}", jar_path.display()));
     }
-    let (child, stdin, stdout) = spawn_core(app).map_err(|e| format!("Falha ao iniciar core: {e}"))?;
+    let (child, stdin, stdout) = spawn_core(app, &jar_path).map_err(|e| format!("Falha ao iniciar core: {e}"))?;
     *self.child.lock().unwrap() = Some(child);
     *self.stdin.lock().unwrap() = Some(stdin);
     start_reader_thread(app.clone(), stdout, self.pending.clone());
 
     thread::sleep(Duration::from_millis(300));
-    if !self.is_alive() {
-      self.cleanup();
+    if !self.is_alive_inner() {
+      self.cleanup_inner();
       return Err("Core encerrou imediatamente. Verifique a versão do Java.".to_string());
     }
     Ok(())
@@ -208,10 +154,11 @@ impl CoreBridge {
 
     match rx.recv_timeout(Duration::from_secs(120)) {
       Ok(resp) => Ok(resp),
-      Err(_) => {
+      Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
         self.pending.lock().ok().map(|mut m| m.remove(&id));
         Err("Timeout aguardando resposta do core".to_string())
       }
+      Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => Err("Core reiniciado durante a requisição".to_string()),
     }
   }
 
@@ -249,15 +196,35 @@ async fn core_request(app: tauri::AppHandle, bridge: State<'_, CoreBridge>, meth
 }
 
 #[tauri::command]
+fn get_runtime_settings(app: tauri::AppHandle) -> RuntimeSettings {
+  read_runtime_settings(&app)
+}
+
+#[tauri::command]
+fn set_java_runtime_path(app: tauri::AppHandle, bridge: State<'_, CoreBridge>, java_path: Option<String>) -> Result<RuntimeSettings, String> {
+  let java_path = java_path.and_then(|value| {
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() { None } else { Some(trimmed) }
+  });
+  if let Some(value) = java_path.as_deref() {
+    validate_java_runtime_path(value)?;
+  }
+  let settings = RuntimeSettings { java_path };
+  write_runtime_settings(&app, &settings)?;
+  bridge.cleanup();
+  Ok(settings)
+}
+
+#[tauri::command]
 async fn select_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
   use tauri_plugin_dialog::DialogExt;
-  
+
   let paths = app
     .dialog()
     .file()
     .set_title("Selecionar pastas")
     .blocking_pick_folders();
-  
+
   match paths {
     Some(list) if !list.is_empty() => {
       let joined = list.iter().map(|p| p.to_string()).collect::<Vec<_>>().join("|");
@@ -267,18 +234,52 @@ async fn select_folder(app: tauri::AppHandle) -> Result<Option<String>, String> 
   }
 }
 
+#[tauri::command]
+async fn select_java_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+  use tauri_plugin_dialog::DialogExt;
+
+  let path = app
+    .dialog()
+    .file()
+    .set_title("Selecionar pasta do Java")
+    .blocking_pick_folder();
+
+  Ok(path.map(|value| value.to_string()))
+}
+
+#[tauri::command]
+async fn select_java_file(app: tauri::AppHandle) -> Result<Option<String>, String> {
+  use tauri_plugin_dialog::DialogExt;
+
+  let path = app
+    .dialog()
+    .file()
+    .set_title("Selecionar executável do Java")
+    .blocking_pick_file();
+
+  Ok(path.map(|value| value.to_string()))
+}
+
 fn main() {
   let bridge = CoreBridge {
     child: Arc::new(Mutex::new(None)),
     stdin: Arc::new(Mutex::new(None)),
     pending: Arc::new(Mutex::new(HashMap::new())),
+    lifecycle: Arc::new(Mutex::new(())),
   };
 
   tauri::Builder::default()
     .manage(bridge)
     .plugin(tauri_plugin_dialog::init())
     .plugin(tauri_plugin_opener::init())
-    .invoke_handler(tauri::generate_handler![core_request, select_folder])
+    .invoke_handler(tauri::generate_handler![
+      core_request,
+      get_runtime_settings,
+      set_java_runtime_path,
+      select_folder,
+      select_java_folder,
+      select_java_file
+    ])
     .setup(|app| {
       let app_handle = app.handle().clone();
       let b = app.state::<CoreBridge>();

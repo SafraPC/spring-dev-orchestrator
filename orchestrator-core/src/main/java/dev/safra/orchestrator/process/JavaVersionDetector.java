@@ -123,7 +123,7 @@ public class JavaVersionDetector {
   private void probeAndAdd(Path javaHome, String source, Map<String, JdkInfo> out) {
     String resolved = javaHome.toAbsolutePath().normalize().toString();
     if (out.containsKey(resolved)) return;
-    Path javaBin = javaHome.resolve("bin/java");
+    Path javaBin = resolveJavaBin(javaHome);
     if (!Files.exists(javaBin)) return;
     try {
       Process p = new ProcessBuilder(javaBin.toString(), "-version").start();
@@ -146,6 +146,12 @@ public class JavaVersionDetector {
       out.put(resolved, new JdkInfo(major, full, resolved, vendor));
     } catch (Exception ignored) {
     }
+  }
+
+  private Path resolveJavaBin(Path javaHome) {
+    Path unixBin = javaHome.resolve("bin/java");
+    if (Files.exists(unixBin)) return unixBin;
+    return javaHome.resolve("bin/java.exe");
   }
 
   private int parseMajor(String v) {

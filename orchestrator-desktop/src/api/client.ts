@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ContainerDto, JdkInfo, ServiceDto, StopResultDto, WorkspaceDto } from "./types";
+import type { ContainerDto, JdkInfo, RuntimeSettingsDto, ServiceDto, StopResultDto, WorkspaceDto } from "./types";
 
 async function core<T>(method: string, params: unknown = {}): Promise<T> {
   try {
@@ -27,6 +27,10 @@ export const api = {
   subscribeLogs: (name: string, tail = 200) => core<{ subId: string }>("subscribeLogs", { name, tail }),
   unsubscribeLogs: (subId: string) => core<{ ok: boolean }>("unsubscribeLogs", { subId }),
   selectFolder: () => invoke<string | null>("select_folder"),
+  selectJavaFolder: () => invoke<string | null>("select_java_folder"),
+  selectJavaFile: () => invoke<string | null>("select_java_file"),
+  getRuntimeSettings: () => invoke<RuntimeSettingsDto>("get_runtime_settings"),
+  setJavaRuntimePath: (javaPath: string | null) => invoke<RuntimeSettingsDto>("set_java_runtime_path", { javaPath }),
 
   createContainer: (name: string, description?: string) => core<ContainerDto>("createContainer", { name, description }),
   deleteContainer: (id: string) => core<ContainerDto>("deleteContainer", { id }),

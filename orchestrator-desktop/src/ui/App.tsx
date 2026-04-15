@@ -1,7 +1,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import type { ContainerDto, JdkInfo, ProjectType, ServiceDto } from "../api/types";
+import type { ContainerDto, JdkInfo, ProjectType, RuntimeSettingsDto, ServiceDto } from "../api/types";
 import { ContainersPanel } from "./ContainersPanel";
 import { Icon } from "./Icons";
 import { ImportSection } from "./ImportSection";
@@ -23,6 +23,10 @@ const TECH_LABELS: Record<string, string> = {
   UNKNOWN: "Outro",
 };
 
+function isJavaStartupError(message: string) {
+  return /java/i.test(message);
+}
+
 export function App() {
   const [services, setServices] = useState<ServiceDto[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -33,6 +37,9 @@ export function App() {
   const [containers, setContainers] = useState<ContainerDto[]>([]);
   const [jdks, setJdks] = useState<JdkInfo[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [runtimeSettings, setRuntimeSettings] = useState<RuntimeSettingsDto>({});
+  const [javaError, setJavaError] = useState<string | null>(null);
+  const [savingJavaPath, setSavingJavaPath] = useState(false);
   const [sideW, setSideW] = useState(288);
   const [svcW, setSvcW] = useState(288);
   const { toasts, addToast, removeToast } = useToast();
@@ -41,29 +48,54 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const selectedService = useMemo(() => services.find((s) => s.name === selected) ?? null, [services, selected]);
 
-  const refresh = useCallback(async () => {
+  const refreshJdks = useCallback(async () => {
+    try {
+      setJdks(await api.listJdks());
+    } catch {}
+  }, []);
+
+  const loadRuntimeSettings = useCallback(async () => {
+    try {
+      setRuntimeSettings(await api.getRuntimeSettings());
+    } catch {}
+  }, []);
+
+  const refreshData = useCallback(async () => {
     try {
       const [list, ctrs] = await Promise.all([api.listServices(), api.listContainers()]);
       setServices(list);
       setContainers(ctrs);
       setSelected((prev) => (prev && !list.some((s) => s.name === prev) ? null : prev));
+      setJavaError(null);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       addToast("error", message);
+      if (isJavaStartupError(message)) {
+        setJavaError(message);
+        setSettingsOpen(true);
+      }
+      return false;
     } finally {
       setLoading(false);
     }
   }, [addToast]);
 
+  const refresh = useCallback(async () => {
+    await refreshData();
+  }, [refreshData]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
   useEffect(() => {
-    void api
-      .listJdks()
-      .then(setJdks)
-      .catch(() => {});
-  }, []);
+    void refreshJdks();
+  }, [refreshJdks]);
+
+  useEffect(() => {
+    void loadRuntimeSettings();
+  }, [loadRuntimeSettings]);
 
   useEffect(() => {
     let cancel = false;
@@ -169,6 +201,41 @@ export function App() {
       await refresh();
     },
     [services, refresh],
+  );
+
+  const handlePickJavaFolder = useCallback(async () => {
+    const picked = await api.selectJavaFolder();
+    if (!picked?.trim()) return;
+    setRuntimeSettings((prev) => ({ ...prev, javaPath: picked.trim() }));
+  }, []);
+
+  const handlePickJavaFile = useCallback(async () => {
+    const picked = await api.selectJavaFile();
+    if (!picked?.trim()) return;
+    setRuntimeSettings((prev) => ({ ...prev, javaPath: picked.trim() }));
+  }, []);
+
+  const handleSaveJavaPath = useCallback(
+    async (value: string | null) => {
+      setSavingJavaPath(true);
+      try {
+        const next = await api.setJavaRuntimePath(value);
+        setRuntimeSettings(next);
+        const ok = await refreshData();
+        if (ok) {
+          await refreshJdks();
+          addToast("success", next.javaPath ? "Java configurado" : "Configuração do Java removida");
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setJavaError(message);
+        setSettingsOpen(true);
+        addToast("error", message);
+      } finally {
+        setSavingJavaPath(false);
+      }
+    },
+    [addToast, refreshData, refreshJdks],
   );
 
   const filteredServices = useMemo(() => {
@@ -298,6 +365,12 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         onChange={setSettings}
+        javaPath={runtimeSettings.javaPath ?? ""}
+        javaError={javaError}
+        savingJavaPath={savingJavaPath}
+        onPickJavaFolder={handlePickJavaFolder}
+        onPickJavaFile={handlePickJavaFile}
+        onSaveJavaPath={handleSaveJavaPath}
       />
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
         {toasts.map((t) => (

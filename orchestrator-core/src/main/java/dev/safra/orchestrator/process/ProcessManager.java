@@ -1,5 +1,6 @@
 package dev.safra.orchestrator.process;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,7 +44,7 @@ public class ProcessManager {
 
       if (!cmd.isEmpty() && "./mvnw".equals(cmd.get(0))) {
         try {
-          java.io.File mvnw = workDir.resolve("mvnw").toFile();
+          File mvnw = workDir.resolve("mvnw").toFile();
           if (mvnw.exists()) {
             mvnw.setExecutable(true);
           }
@@ -52,10 +53,14 @@ public class ProcessManager {
       }
 
       if (!isJava) {
-        String shell = System.getenv("SHELL");
-        if (shell == null || shell.isBlank()) shell = "/bin/zsh";
         String joined = String.join(" ", cmd);
-        cmd = List.of(shell, "-lc", joined);
+        if (isWindows()) {
+          cmd = List.of("cmd.exe", "/c", joined);
+        } else {
+          String shell = System.getenv("SHELL");
+          if (shell == null || shell.isBlank()) shell = "/bin/zsh";
+          cmd = List.of(shell, "-lc", joined);
+        }
       }
 
       ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -75,7 +80,7 @@ public class ProcessManager {
       }
 
       for (String extra : new String[]{"/opt/homebrew/bin", "/usr/local/bin"}) {
-        if (!path.contains(extra) && Files.isDirectory(Path.of(extra))) path = extra + ":" + path;
+        if (!path.contains(extra) && Files.isDirectory(Path.of(extra))) path = prependPath(path, extra);
       }
       env.put("PATH", path);
 
@@ -160,20 +165,20 @@ public class ProcessManager {
     if (javaHome == null || javaHome.isBlank()) javaHome = detectJavaHome(def.getJavaVersion());
     if (javaHome != null && !javaHome.isBlank()) {
       env.put("JAVA_HOME", javaHome);
-      path = Path.of(javaHome, "bin") + ":" + path;
+      path = prependPath(path, Path.of(javaHome, "bin").toString());
     }
     String home = System.getProperty("user.home");
     String sdkmanMvn = home + "/.sdkman/candidates/maven/current/bin";
-    if (Files.isDirectory(Path.of(sdkmanMvn))) path = sdkmanMvn + ":" + path;
+    if (Files.isDirectory(Path.of(sdkmanMvn))) path = prependPath(path, sdkmanMvn);
     return path;
   }
 
   private String setupNodePath(Map<String, String> env, String path, Path workDir) {
     String localBin = workDir.resolve("node_modules/.bin").toAbsolutePath().toString();
-    path = localBin + ":" + path;
+    path = prependPath(path, localBin);
 
     String shellPath = resolveShellPath();
-    if (!shellPath.isEmpty()) path = shellPath + ":" + path;
+    if (!shellPath.isEmpty()) path = prependPath(path, shellPath);
 
     String home = System.getProperty("user.home");
     String[] nodePaths = {
@@ -189,11 +194,11 @@ public class ProcessManager {
           var latest = stream.filter(Files::isDirectory).max(java.util.Comparator.naturalOrder());
           if (latest.isPresent()) {
             String bin = latest.get().resolve("bin").toString();
-            if (!path.contains(bin)) path = bin + ":" + path;
+            if (!path.contains(bin)) path = prependPath(path, bin);
           }
         } catch (Exception ignored) {}
       } else {
-        if (!path.contains(dir)) path = dir + ":" + path;
+        if (!path.contains(dir)) path = prependPath(path, dir);
       }
     }
     return path;
@@ -201,6 +206,13 @@ public class ProcessManager {
 
   private String resolveShellPath() {
     try {
+      if (isWindows()) {
+        Process p = new ProcessBuilder("cmd.exe", "/c", "echo %PATH%")
+            .redirectErrorStream(true).start();
+        String out = new String(p.getInputStream().readAllBytes()).trim();
+        p.waitFor(5, TimeUnit.SECONDS);
+        return out;
+      }
       String shell = System.getenv("SHELL");
       if (shell == null || shell.isBlank()) shell = "/bin/zsh";
       Process p = new ProcessBuilder(shell, "-lc", "echo $PATH")
@@ -211,6 +223,16 @@ public class ProcessManager {
     } catch (Exception ignored) {
       return "";
     }
+  }
+
+  private boolean isWindows() {
+    return System.getProperty("os.name").toLowerCase().contains("win");
+  }
+
+  private String prependPath(String path, String entry) {
+    if (entry == null || entry.isBlank()) return path;
+    if (path == null || path.isBlank()) return entry;
+    return entry + File.pathSeparator + path;
   }
 
   private void freePort(ServiceDefinition def) {
