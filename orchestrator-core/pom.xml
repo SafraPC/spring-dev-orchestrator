@@ -6,7 +6,7 @@
 
   <groupId>dev.safra</groupId>
   <artifactId>orchestrator-core</artifactId>
-  <version>1.0.1</version>
+  <version>1.0.2</version>
   <name>orchestrator-core</name>
   <description>Local dev orchestrator core (Desktop IPC)</description>
 

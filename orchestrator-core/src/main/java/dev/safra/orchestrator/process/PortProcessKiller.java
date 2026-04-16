@@ -3,6 +3,7 @@ package dev.safra.orchestrator.process;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
+import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -71,9 +72,11 @@ public final class PortProcessKiller {
   private static Set<String> findPidsPowerShell(int port) {
     Set<String> pids = new HashSet<>();
     try {
+      String powershell = WindowsCommandResolver.resolvePowerShell().map(Path::toString).orElse(null);
+      if (powershell == null) return pids;
       String cmd = "(Get-NetTCPConnection -LocalPort " + port
           + " -ErrorAction SilentlyContinue).OwningProcess | Sort-Object -Unique";
-      Process ps = new ProcessBuilder("powershell", "-NoProfile", "-Command", cmd)
+      Process ps = new ProcessBuilder(powershell, "-NoProfile", "-Command", cmd)
           .redirectErrorStream(true).start();
       String output = new String(ps.getInputStream().readAllBytes()).trim();
       ps.waitFor(8, TimeUnit.SECONDS);
