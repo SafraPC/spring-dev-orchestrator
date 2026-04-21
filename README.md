@@ -10,13 +10,13 @@
 
 <p align="center">
   <a href="https://github.com/SafraPC/orchestrator/releases/latest">
-    <img alt="Latest release" src="https://img.shields.io/github/v/release/SafraPC/orchestrator?display_name=release&style=for-the-badge">
+    <img alt="Latest release" src="https://img.shields.io/badge/release-v1.0.3-0ea5e9?style=for-the-badge">
   </a>
   <a href="https://github.com/SafraPC/orchestrator/releases/latest">
-    <img alt="Downloads" src="https://img.shields.io/github/downloads/SafraPC/orchestrator/total?style=for-the-badge">
+    <img alt="Downloads" src="https://img.shields.io/github/downloads/SafraPC/orchestrator/total?style=for-the-badge&color=84cc16">
   </a>
   <a href="./LICENSE">
-    <img alt="License" src="https://img.shields.io/github/license/SafraPC/orchestrator?style=for-the-badge">
+    <img alt="License" src="https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge">
   </a>
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-111827?style=for-the-badge">
 </p>
