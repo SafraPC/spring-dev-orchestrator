@@ -21,13 +21,21 @@
   <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-111827?style=for-the-badge">
 </p>
 
+<p align="center">
+  <img alt="Orchestrator running" src="./docs/running.png" width="92%">
+</p>
+
+---
+
 ## What It Delivers
 
-- Centralized control for local services.
+- Centralized control for local services on macOS, Windows, and Linux.
 - Clean grouping with logical containers.
-- Fast start, stop, and restart flows.
-- Live logs with search and monitoring.
+- Fast start, stop, and restart flows with keyboard shortcuts.
+- Live logs with search, filtering, and per-service or per-container views.
 - Branch visibility for Git-based projects.
+- Per-service customization: Java version, Maven wrapper, scripts, ports.
+- Built-in port killer to recover stuck local ports.
 - Persistent workspace state across sessions.
 
 ## Supported Stacks
@@ -39,6 +47,72 @@
 | NestJS | `package.json` |
 | React | `package.json` |
 | Vue | `package.json` |
+
+## Feature Tour
+
+### Group services into containers
+
+Organize services into logical containers (frontends, backends, full apps, sandboxes). Start or stop a whole container with one click.
+
+<p align="center">
+  <img alt="Create container" src="./docs/create-container.png" width="80%">
+</p>
+
+### Filter by technology
+
+The tech filter narrows the service list to a single stack — useful when juggling dozens of microservices and frontends.
+
+<p align="center">
+  <img alt="Filter by tech" src="./docs/filter-by-tech.png" width="80%">
+</p>
+
+### Per-service logs
+
+Inspect a single service with timestamps, search, line wrapping, and font size controls.
+
+<p align="center">
+  <img alt="See unique service logs" src="./docs/see-unique-service-logs.png" width="85%">
+</p>
+
+### Aggregated container logs
+
+Switch the log panel to follow every service inside a container, color-tagged per service, in one stream.
+
+<p align="center">
+  <img alt="See container logs" src="./docs/se-container-logs.png" width="85%">
+</p>
+
+### Run or change any script
+
+For Node-based projects, pick any script defined in `package.json`. For Spring Boot, toggle between system Maven and the project's `mvnw` wrapper directly from the service menu.
+
+<p align="center">
+  <img alt="Run or change any script" src="./docs/run-alter-any-script.png" width="80%">
+</p>
+
+### Kill stuck ports
+
+Free a port that another process is holding without leaving the app. One click in the toolbar, type the port, done.
+
+<p align="center">
+  <img alt="Kill ports easily" src="./docs/kill-ports-easily.png" width="70%">
+</p>
+
+### Customize the experience
+
+Zoom, font size, line wrap, Java runtime path, cache rebuild — all available from the settings panel.
+
+<p align="center">
+  <img alt="Customize yourself" src="./docs/customize-yourself.png" width="70%">
+</p>
+
+### One-shot configuration
+
+Point Orchestrator at one or more project roots and it scans, classifies, and registers every service automatically.
+
+<p align="center">
+  <img alt="Easy configuration" src="./docs/easy-config.png" width="85%">
+</p>
 
 ## Download
 
@@ -113,6 +187,8 @@ Notes:
 | `Ctrl/Cmd + X` | Stop selected service |
 | `Ctrl/Cmd + R` | Restart selected service |
 | `Ctrl/Cmd + F` | Search logs |
+| `Ctrl/Cmd + ,` | Open settings |
+| `Ctrl/Cmd + +` / `-` / `0` | Zoom in / out / reset |
 
 ## Architecture
 

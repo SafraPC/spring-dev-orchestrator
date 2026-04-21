@@ -1,7 +1,6 @@
 .DS_Store
 .idea/
 .vscode/
-/docs/
 
 **/target/
 **/node_modules/
